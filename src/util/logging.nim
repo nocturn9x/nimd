@@ -14,6 +14,7 @@
 
 # A simple logging module inspired by python's own logging facility
 import strformat
+import times
 
 
 type
@@ -61,7 +62,7 @@ proc removeHandler*(self: Logger, handler: LogHandler) = self.handlers.delete(se
 proc log(self: Logger, level: LogLevel = defaultLevel, message: string) =
     ## Generic utility for logging on any level
     for handler in self.handlers:
-        if handler.level == level:
+        if handler.level == level and self.level <= level:
             handler.code(handler, self, message)
 
 
@@ -69,28 +70,29 @@ proc getDefaultLogger*(): Logger =
     ## Gets a simple logger with level set
     ## to LogLevel.Info and one handler per
     ## level that writes the given message to the
-    ## standard error
+    ## standard error with some basic info like the
+    ## current date and time and the log level
 
     proc logTrace(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[TRACE] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - TRACE] {message}""")
     
     proc logDebug(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[DEBUG] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - DEBUG] {message}""")
     
     proc logInfo(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[INFO] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - INFO] {message}""")
 
     proc logWarning(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[WARNING] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - WARNING] {message}""")
 
     proc logError(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[ERROR] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - ERROR] {message}""")
 
     proc logCritical(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[CRITICAL] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - CRITICAL] {message}""")
 
     proc logFatal(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[FATAL] {message}\n")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - FATAL] {message}""")
 
 
     result = newLogger()
