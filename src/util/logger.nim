@@ -72,25 +72,25 @@ proc getDefaultLogger*(): Logger =
     ## standard error
 
     proc logTrace(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[TRACE] {message}")
+        stderr.write(&"[TRACE] {message}\n")
     
     proc logDebug(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[DEBUG] {message}")
+        stderr.write(&"[DEBUG] {message}\n")
     
     proc logInfo(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[INFO] {message}")
+        stderr.write(&"[INFO] {message}\n")
 
     proc logWarning(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[WARNING] {message}")
+        stderr.write(&"[WARNING] {message}\n")
 
     proc logError(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[ERROR] {message}")
+        stderr.write(&"[ERROR] {message}\n")
 
     proc logCritical(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[CRITICAL] {message}")
+        stderr.write(&"[CRITICAL] {message}\n")
 
     proc logFatal(self: LogHandler, logger: Logger, message: string) =
-        stderr.write(&"[FATAL] {message}")
+        stderr.write(&"[FATAL] {message}\n")
 
 
     result = newLogger()
