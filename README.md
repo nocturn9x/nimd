@@ -1,2 +1,2 @@
 # nimd
-A minimal init system written in Nim
+A minimal, self-contained dependency-based Linux init system written in Nim

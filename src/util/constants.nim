@@ -11,8 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import strformat
 
-const NimdVersion*: tuple[major, minor, patch: int] = (major: 0, minor: 0, patch: 1)
+
+const NimDVersion*: tuple[major, minor, patch: int] = (major: 0, minor: 0, patch: 1)
+const NimDVersionString* = &"NimD version {NimDVersion.major}.{NimDVersion.minor}.{NimDVersion.patch} ({CompileDate}, {CompileTime}, {hostOS}, {hostCPU}) compiled with Nim {NimVersion}"
 const helpMessage* = """The NimD init system, Copyright (C) 2021 Mattia Giambirtone & All contributors
 
 This program is free software, see the license distributed with this program or check

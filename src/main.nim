@@ -16,43 +16,13 @@ import strformat
 import posix
 import os
 
-
-import util/[logging, constants, mount]
-
-
-proc sleepSeconds(amount: SomeInteger) = sleep(amount * 1000)
-
-
-proc handleControlC {.noconv.} =
-    getDefaultLogger().warning("Main process received SIGINT: exiting")  # TODO: Call exit point
-    quit(0)
-
-
-proc mainLoop(logger: Logger) =
-    ## NimD's main execution loop
-    try:
-        logger.info("Reading disk entries from /etc/fstab")
-        for entry in parseFileSystemTable(readFile("/etc/fstab")):
-            logger.debug(&"Mounting filesystem {entry.source} of type {entry.filesystemtype} at {entry.target} with mountflags {entry.mountflags} and mount options {entry.data}")
-            logger.trace("Calling mount()")
-            var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
-            logger.trace(&"mount() returned {retcode}")
-            if retcode == -1:
-                logger.warning(&"Mounting disk {entry.source} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
-            else:
-                logger.debug(&"Mounted {entry.source} at {entry.target}")
-            posix.errno = cint(0)
-    except IndexDefect:
-        logger.fatal("Improperly formatted /etc/fstab, exiting")
-        quit(131)
-    logger.info("Disks mounted")
-    while true:
-        logger.info("NimD is running")
-        sleepSeconds(5)
+# NimD's own stuff
+import util/[logging, constants, misc]
+import core/mainloop
 
 
 proc main(logger: Logger) = 
-    ## NimD entry point
+    ## NimD's entry point
     logger.debug("Starting NimD: A minimal, self-contained dependency-based Linux init system written in Nim")
     logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up...")
     logger.trace("Calling getCurrentProcessId()")
@@ -84,7 +54,7 @@ when isMainModule:
                         echo helpMessage
                         quit(0)
                     of "version":
-                        echo &"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} ({CompileDate}, {CompileTime}, {hostOS}, {hostCPU}) compiled with Nim {NimVersion}"
+                        echo NimDVersionString
                         quit(0)
                     of "verbose":
                         logger.setLevel(LogLevel.Debug)
@@ -99,7 +69,7 @@ when isMainModule:
                         echo helpMessage
                         quit(0)
                     of "v":
-                        echo &"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} ({CompileDate}, {CompileTime}, {hostOS}, {hostCPU}) compiled with Nim {NimVersion}"
+                        echo NimDVersionString
                         quit(0)
                     of "V":
                         logger.setLevel(LogLevel.Debug)
