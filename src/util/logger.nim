@@ -61,7 +61,7 @@ proc removeHandler*(self: Logger, handler: LogHandler) = self.handlers.delete(se
 proc log(self: Logger, level: LogLevel = defaultLevel, message: string) =
     ## Generic utility for logging on any level
     for handler in self.handlers:
-        if handler.level < level:
+        if handler.level == level:
             handler.code(handler, self, message)
 
 
