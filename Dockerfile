@@ -5,6 +5,7 @@ WORKDIR /code
 
 # Removes any already existing binary so that when compilation fails the container stops
 RUN rm -f /code/nimd
+RUN rm -f /code/main
 RUN nim -d:release --opt:size --passL:"-static" --gc:orc -d:useMalloc c -o:nimd src/main
 RUN cp /code/nimd /sbin/nimd
 

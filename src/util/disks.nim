@@ -96,7 +96,7 @@ proc mountVirtualDisks*(logger: Logger) =
     ## such as /proc and /sys
     for entry in virtualFileSystems:
         logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
-        logger.trace(&"Calling mount({entry.source}, {entry.target}, {entry.filesystemtype}, {entry.mountflags}, '{entry.data}')")
+        logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}')")
         var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
         logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
         if retcode == -1:
