@@ -65,6 +65,10 @@ proc mount*(source, target, filesystemtype: string, mountflags: uint64, data: st
 
 proc umount*(target: cstring): cint {.header: "sys/mount.h", importc.}
 proc umount2*(target: cstring, flags: cint): cint {.header: "sys/mount.h", importc.}
+# These 2 wrappers silent the CStringConv warning 
+# (implicit conversion to 'cstring' from a non-const location)
+proc umount*(target: string): int = int(umount(cstring(target)))
+proc umount2*(target: string, flags: int): int = int(umount2(cstring(target), cint(flags)))
 
 
 proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
@@ -73,11 +77,11 @@ proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
         logger.info(&"Reading disk entries from {fstab}")
         for entry in parseFileSystemTable(readFile(fstab)):
             logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
-            logger.trace(&"Calling mount({entry.source}, {entry.target}, {entry.filesystemtype}, {entry.mountflags}, {entry.data})")
+            logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}')")
             var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
-            logger.trace(&"mount({entry.source}, {entry.target}, {entry.filesystemtype}, {entry.mountflags}, {entry.data}) returned {retcode}")
+            logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
             if retcode == -1:
-                logger.error(&"Mounting disk {entry.source} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
+                logger.error(&"Mounting {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
                 # Resets the error code
                 posix.errno = cint(0)
             else:
@@ -92,11 +96,11 @@ proc mountVirtualDisks*(logger: Logger) =
     ## such as /proc and /sys
     for entry in virtualFileSystems:
         logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
-        logger.trace(&"Calling mount({entry.source}, {entry.target}, {entry.filesystemtype}, {entry.mountflags}, {entry.data})")
+        logger.trace(&"Calling mount({entry.source}, {entry.target}, {entry.filesystemtype}, {entry.mountflags}, '{entry.data}')")
         var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
-        logger.trace(&"mount({entry.source}, {entry.target}, {entry.filesystemtype}, {entry.mountflags}, {entry.data}) returned {retcode}")
+        logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
         if retcode == -1:
-            logger.error(&"Mounting disk {entry.source} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
+            logger.error(&"Mounting disk {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
             # Resets the error code
             posix.errno = cint(0)
             logger.fatal("Failed mounting vital system disk partition, system is likely corrupted, booting cannot continue")
@@ -113,11 +117,11 @@ proc unmountAllDisks*(logger: Logger, code: int) =
         logger.info(&"Reading disk entries from /proc/mounts")
         for entry in parseFileSystemTable(readFile("/proc/mounts")):
             logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
-            logger.trace(&"Calling umount({entry.source})")
-            var retcode = umount(entry.source)
-            logger.trace(&"umount({entry.source}) returned {retcode}")
+            logger.trace(&"Calling umount('{entry.target}')")
+            var retcode = umount(entry.target)
+            logger.trace(&"umount('{entry.target}') returned {retcode}")
             if retcode == -1:
-                logger.error(&"Unmounting disk {entry.source} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
+                logger.error(&"Unmounting disk {entry.source} from {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
                 # Resets the error code
                 posix.errno = cint(0)
             else:
