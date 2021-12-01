@@ -50,7 +50,6 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source: cstring, target: cs
         # in our temporary list
         temp = line.split().filterIt(it != "").join(" ").split(maxsplit=6)
         result.add((source: cstring(temp[0]), target: cstring(temp[1]), filesystemtype: cstring(temp[2]), mountflags: culong(0), data: cstring(temp[3])))
-        echo result[^1]
 
 # Nim wrappers around C functionality in sys/mount.h on Linux
 proc mount*(source: cstring, target: cstring, filesystemtype: cstring,
@@ -104,7 +103,6 @@ proc unmountAllDisks*(logger: Logger, code: int) =
     try:
         logger.info(&"Reading disk entries from /proc/mounts")
         for entry in parseFileSystemTable(readFile("/proc/mounts")):
-            echo entry
             logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
             logger.trace(&"Calling umount({entry.source})")
             var retcode = umount(entry.source)
