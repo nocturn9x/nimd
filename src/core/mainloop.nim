@@ -13,25 +13,26 @@
 # limitations under the License.
 import segfaults   # Makes us catch segfaults as NilAccessDefect exceptions!
 import strformat
-import posix
 import os
 
 
 import ../util/[logging, disks, misc]
 
 
-proc mainLoop*(logger: Logger, mountDisks: bool = true) =
+proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") =
     ## NimD's main execution loop
     try:
+        addShutdownHandler(unmountAllDisks)
         if mountDisks:
+            logger.info("Mounting filesystem")
             logger.info("Mounting virtual disks")
             mountVirtualDisks(logger)
             logger.info("Mounting real disks")
-            mountRealDisks(logger)
+            mountRealDisks(logger, fstab)
         else:
             logger.info("Skipping disk mounting, did we restart after a critical error?")
-    except IndexDefect:  # Check parseFileSystemTable for more info on this catch block
-        logger.fatal("Improperly formatted /etc/fstab, exiting")
+    except:
+        logger.fatal(&"A fatal error has occurred while mounting disks, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)
     logger.info("Disks mounted")
     logger.info("Processing boot runlevel")

@@ -3,7 +3,9 @@ FROM nimlang/nim AS builder
 COPY . /code
 WORKDIR /code
 
-RUN nim c -o:nimd --passL:"-static" src/main.nim
+# Removes any already existing binary so that when compilation fails the container stops
+RUN rm -f /code/nimd
+RUN nim -d:release --opt:size --passL:"-static" --gc:markAndSweep c -o:nimd src/main
 RUN cp /code/nimd /sbin/nimd
 
 FROM alpine:latest

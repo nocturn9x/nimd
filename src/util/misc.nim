@@ -11,20 +11,47 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+## Default signal handlers, exit procedures and helpers
+## to allow a clean shutdown of NimD
 import os
+import strformat
+
 
 import logging
 
 
 
+var shutdownHandlers: seq[proc (logger: Logger, code: int)] = @[]
+
+
+proc addShutdownHandler*(handler: proc (logger: Logger, code: int)) =
+    shutdownHandlers.add(handler)
+
+
+proc removeShutdownHandler*(handler: proc (logger: Logger, code: int)) =
+    shutdownHandlers.delete(shutdownHandlers.find(handler))
+
+
 proc nimDExit*(logger: Logger, code: int) =
-    logger.warning("The system is being shut down, beginning child process termination")
+    logger.warning("The system is being shut down!")
     # TODO
     logger.info("Processing shutdown runlevel")
     # TODO
-    logger.warning("Process termination complete, sending final shutdown signal")
+    logger.info("Running shutdown handlers")
+    try:
+        for handler in shutdownHandlers:
+            handler(logger, code)
+    except:
+        logger.error(&"An error has occurred while calling shutdown handlers. Error -> {getCurrentExceptionMsg()}")
+        # Note: continues calling handlers!
+    logger.info("Terminating child processes with SIGINT")
     # TODO
-    quit(code)
+    logger.info("Terminating child processes with SIGKILL")
+    # TODO
+    logger.warning("Shutdown procedure complete, sending final termination signal")
+    # TODO
+    quit(code)  # Replace with syscall(REBOOT, ...)
 
 
 proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
