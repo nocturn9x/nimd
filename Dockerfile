@@ -5,7 +5,7 @@ WORKDIR /code
 
 # Removes any already existing binary so that when compilation fails the container stops
 RUN rm -f /code/nimd
-RUN nim -d:release --opt:size --passL:"-static" --gc:markAndSweep c -o:nimd src/main
+RUN nim -d:release --opt:size --passL:"-static" c -o:nimd src/main
 RUN cp /code/nimd /sbin/nimd
 
 FROM alpine:latest

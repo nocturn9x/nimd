@@ -29,10 +29,13 @@ const virtualFileSystems: seq[tuple[source: cstring, target: cstring, filesystem
 
 ]
 
-proc parseFileSystemTable*(fstab: string): seq[tuple[source: cstring, target: cstring, filesystemtype: cstring, mountflags: culong, data: cstring]] =
+proc parseFileSystemTable*(fstab: string): seq[tuple[source, target, filesystemtype: string, mountflags: uint64, data: string]] =
     ## Parses the contents of the given file (the contents of /etc/fstab or /etc/mtab
     ## most of the time, but this is not enforced in any way) and returns a sequence 
-    ## of tuples with elements source, target, filesystemtype, mountflags and data
+    ## of tuples with elements source, target, filesystemtype, mountflags and data as
+    ## required by the mount system call.
+    ## The types of these arguments are Nim types to make the garbage collector happy
+    ## and avoid freeing the underlying string object.
     ## as required by mount/umount/umount2 in sys/mount.h which is wrapped below. 
     ## An improperly formatted fstab will cause this function to error out with an 
     ## IndexDefect exception (when an entry is incomplete) that should be caught by 
@@ -49,11 +52,14 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source: cstring, target: cs
         # This madness will make sure we only get (hopefully) 6 entries
         # in our temporary list
         temp = line.split().filterIt(it != "").join(" ").split(maxsplit=6)
-        result.add((source: cstring(temp[0]), target: cstring(temp[1]), filesystemtype: cstring(temp[2]), mountflags: culong(0), data: cstring(temp[3])))
+        result.add((source: temp[0], target: temp[1], filesystemtype: temp[2], mountflags: 0u64, data: temp[3]))
+
 
 # Nim wrappers around C functionality in sys/mount.h on Linux
 proc mount*(source: cstring, target: cstring, filesystemtype: cstring,
             mountflags: culong, data: pointer): cint {.header: "sys/mount.h", importc.}
+proc mount*(source, target, filesystemtype: string, mountflags: uint64, data: string): int = int(mount(cstring(source), cstring(target), cstring(filesystemtype), culong(mountflags), cstring(data)))
+
 proc umount*(target: cstring): cint {.header: "sys/mount.h", importc.}
 proc umount2*(target: cstring, flags: cint): cint {.header: "sys/mount.h", importc.}
 
