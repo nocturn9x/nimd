@@ -58,6 +58,9 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source, target, filesystemt
 # Nim wrappers around C functionality in sys/mount.h on Linux
 proc mount*(source: cstring, target: cstring, filesystemtype: cstring,
             mountflags: culong, data: pointer): cint {.header: "sys/mount.h", importc.}
+# Since cstrings are weak references, we need to convert nim strings to cstrings only
+# when we're ready to use them and only when we're sure the underlying nim string is
+# in scope, otherwise garbage collection madness happens
 proc mount*(source, target, filesystemtype: string, mountflags: uint64, data: string): int = int(mount(cstring(source), cstring(target), cstring(filesystemtype), culong(mountflags), cstring(data)))
 
 proc umount*(target: cstring): cint {.header: "sys/mount.h", importc.}
