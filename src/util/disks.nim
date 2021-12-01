@@ -20,7 +20,7 @@ import logging
 import misc
 
 const virtualFileSystems: seq[tuple[source: cstring, target: cstring, filesystemtype: cstring, mountflags: culong, data: cstring]] = @[
-    (source: cstring("proc"), target: cstring("/proc"), filesystemtype: cstring("procfs"), mountflags: culong(0), data: cstring("nosuid,noexec,nodev")),
+    (source: cstring("proc"), target: cstring("/proc"), filesystemtype: cstring("proc"), mountflags: culong(0), data: cstring("nosuid,noexec,nodev")),
     (source: cstring("sys"), target: cstring("/sys"), filesystemtype: cstring("sysfs"), mountflags: culong(0), data: cstring("nosuid,noexec,nodev")),
     (source: cstring("run"), target: cstring("/run"), filesystemtype: cstring("tmpfs"), mountflags: culong(0), data: cstring("mode=0755,nosuid,nodev")),
     (source: cstring("dev"), target: cstring("/dev"), filesystemtype: cstring("devtmpfs"), mountflags: culong(0), data: cstring("mode=0755,nosuid")),
@@ -112,7 +112,6 @@ proc mountVirtualDisks*(logger: Logger) =
 proc unmountAllDisks*(logger: Logger, code: int) =
     ## Unmounts all currently mounted disks, including the ones that
     ## were not mounted trough fstab and virtual filesystems
-    
     try:
         logger.info(&"Reading disk entries from /proc/mounts")
         for entry in parseFileSystemTable(readFile("/proc/mounts")):
