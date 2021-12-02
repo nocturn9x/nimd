@@ -22,7 +22,7 @@ import ../util/[logging, disks, misc]
 proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") =
     ## NimD's main execution loop
     try:
-        addShutdownHandler(unmountAllDisks)
+        addShutdownHandler(unmountAllDisks, logger)
         if mountDisks:
             logger.info("Mounting filesystem")
             logger.info("Mounting virtual disks")
@@ -44,6 +44,9 @@ proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fs
         try:
             # TODO
             sleepSeconds(5)
+        except CtrlCException:
+            logger.warning("Main process received SIGINT: exiting")
+            nimDExit(logger, 130)  # 130 - Interrupted by SIGINT
         except:
             logger.critical(&"A critical error has occurred while running, restarting the mainloop! Error -> {getCurrentExceptionMsg()}")
             # We *absolutely* cannot die

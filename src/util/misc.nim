@@ -20,17 +20,20 @@ import strformat
 
 import logging
 
+type CtrlCException* = object of CatchableError
 
 
 var shutdownHandlers: seq[proc (logger: Logger, code: int)] = @[]
 
 
-proc addShutdownHandler*(handler: proc (logger: Logger, code: int)) =
+proc addShutdownHandler*(handler: proc (logger: Logger, code: int), logger: Logger) =
     shutdownHandlers.add(handler)
 
 
 proc removeShutdownHandler*(handler: proc (logger: Logger, code: int)) =
-    shutdownHandlers.delete(shutdownHandlers.find(handler))
+    for i, h in shutdownHandlers:
+        if h == handler:
+            shutdownHandlers.delete(i)
 
 
 proc nimDExit*(logger: Logger, code: int) =
@@ -58,5 +61,4 @@ proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
 
 
 proc handleControlC* {.noconv.} =
-    getDefaultLogger().warning("Main process received SIGINT: exiting")  # TODO: Call exit point
-    nimDExit(getDefaultLogger(), 130)  # Exit code 130 indicates a SIGINT
+    raise newException(CtrlCException, "Interrupted by Ctrl+C")
