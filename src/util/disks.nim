@@ -115,16 +115,6 @@ proc umount*(target: string): int = int(umount(cstring(target)))
 proc umount2*(target: string, flags: int): int = int(umount2(cstring(target), cint(flags)))
 
 
-proc exists(p: string): bool =
-    # Checks if a path exists. Thanks
-    # araq :)
-    try:
-        discard getFileInfo(p)
-        result = true
-    except OSError:
-        result = false
-
-
 proc checkDisksIsMounted(search: tuple[source, target, filesystemtype: string, mountflags: uint64, data: string, dump, pass: uint8], expand: bool = false): bool =
     ## Returns true if a disk is already mounted. If expand is true,
     ## symlinks are expanded and checked instead of doing a simple
@@ -211,9 +201,9 @@ proc unmountAllDisks*(logger: Logger, code: int) =
                 logger.debug(&"Skipping unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}: not mounted")
                 continue
             logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
-            logger.trace(&"Calling umount2('{entry.target}', MNT_DETACH)")
-            retcode = umount2(entry.target, 2)   # 2 = MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
-            logger.trace(&"umount2('{entry.target}', MNT_DETACH) returned {retcode}")
+            logger.trace(&"Calling umount2('{entry.source}', MNT_DETACH)")
+            retcode = umount2(entry.source, 2)   # 2 = MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
+            logger.trace(&"umount2('{entry.source}', MNT_DETACH) returned {retcode}")
             if retcode == -1:
                 logger.error(&"Unmounting disk {entry.source} from {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
                 # Resets the error code

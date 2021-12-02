@@ -17,14 +17,43 @@
 import os
 import strformat
 import strutils
+import syscall
 
 
 import logging
 
-type CtrlCException* = object of CatchableError
+# Note: This will work reliably only with absolute paths. Use with care
+const symlinks: array[7, tuple[dest, source: string]] = [
+    (dest: "/dev/fd", source: "/proc/self/fd"),
+    (dest: "/dev/fd/0", source: "/proc/self/fd/0"),
+    (dest: "/dev/fd/1", source: "/proc/self/fd/1"),
+    (dest: "/dev/fd/2", source: "/proc/self/fd/2"),
+    (dest: "/dev/std/in", source: "/proc/self/fd/0"),
+    (dest: "/dev/std/out", source: "/proc/self/fd/1"),
+    (dest: "/dev/std/err", source: "/proc/self/fd/2"),
+]
 
 
 var shutdownHandlers: seq[proc (logger: Logger, code: int)] = @[]
+
+
+proc doSync*(logger: Logger) =
+    logger.debug(&"Calling sync() syscall has returned {syscall(SYNC)}")    
+
+
+proc reapProcess*(logger: Logger) =
+    logger.debug("Handling SIGCHLD")
+    # TODO
+
+
+proc exists*(p: string): bool =
+    # Checks if a path exists. Thanks
+    # araq :)
+    try:
+        discard getFileInfo(p)
+        result = true
+    except OSError:
+        result = false
 
 
 proc addShutdownHandler*(handler: proc (logger: Logger, code: int), logger: Logger) =
@@ -83,7 +112,31 @@ proc setHostname*(logger: Logger): string =
     return hostname
 
 
+proc createSymlinks*(logger: Logger) =
+    ## Creates a set of symlinks needed
+    ## by stuff like Linux ports of BSD
+    ## software
+    for sym in symlinks:
+        try:
+            if not exists(sym.source):
+                logger.warning(&"Skipping creation of symbolic link from {sym.dest} to {sym.source}: destination does not exist")
+                continue
+            elif exists(sym.dest):
+                if symlinkExists(sym.dest) and sameFile(expandSymlink(sym.dest), sym.source):
+                    logger.debug(&"Skipping creation of symbolic link from {sym.dest} to {sym.source}: link already exists")
+                elif symlinkExists(sym.dest) and not sameFile(expandSymlink(sym.dest), sym.source):
+                    logger.warning(&"Attempted to create symbolic link from {sym.dest} to {sym.source}, but link already exists and points to {expandSymlink(sym.dest)}")
+                continue
+            logger.debug(&"Creating symbolic link from {sym.source} to {sym.dest}")
+            createSymlink(sym.dest, sym.source)
+        except:
+            logger.error(&"Failed to create symbolic link from {sym.dest} to {sym.source}: {getCurrentExceptionMsg()}")
+
+
+proc createDirectories*(logger: Logger) =
+    ## Creates 
+
 proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
 
 
-proc strsignal*(sig: cint): cstring {.header:"string.h", importc.}
+proc strsignal*(sig: cint): cstring {.header: "string.h", importc.}

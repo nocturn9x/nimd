@@ -35,8 +35,12 @@ proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fs
         logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)
     logger.info("Disks mounted")
+    logger.debug("Calling sync() just in case")
+    doSync(logger)
     logger.info("Setting hostname")
     logger.debug(&"Hostname was set to '{setHostname(logger)}'")
+    logger.info("Creating symlinks")
+    createSymlinks(logger)
     logger.info("Processing boot runlevel")
     # TODO
     logger.info("Processing default runlevel")
@@ -46,9 +50,6 @@ proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fs
         try:
             # TODO
             sleepSeconds(5)
-        except CtrlCException:
-            logger.warning("Main process received SIGINT: exiting")  # TODO: Ignore this once we stop testing on our local machines lol
-            nimDExit(logger, 130, emerg=false)  # 130 - Interrupted by SIGINT
         except:
             logger.critical(&"A critical error has occurred while running, restarting the mainloop! Error -> {getCurrentExceptionMsg()}")
             # We *absolutely* cannot die
