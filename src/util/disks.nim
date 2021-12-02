@@ -15,6 +15,7 @@ import strutils
 import sequtils
 import strformat
 import posix
+import os
 
 import logging
 import misc
@@ -56,7 +57,7 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source, target, filesystemt
         # in our temporary list
         temp = line.split().filterIt(it != "").join(" ").split(maxsplit=6)
         if temp[0].toLowerAscii().startswith("id="):
-            temp[0] = &"""/dev/disk/by-id/{temp[0].split("=", maxsplit=2)[1]}"""
+            temp[0] = &"""disk/by-id/{temp[0].split("=", maxsplit=2)[1]}"""
         if temp[0].toLowerAscii().startswith("label="):
             temp[0] = &"""/dev/disk/by-label/{temp[0].split("=", maxsplit=2)[1]}"""
         if temp[0].toLowerAscii().startswith("uuid="):
@@ -81,12 +82,23 @@ proc umount2*(target: cstring, flags: cint): cint {.header: "sys/mount.h", impor
 proc umount*(target: string): int = int(umount(cstring(target)))
 proc umount2*(target: string, flags: int): int = int(umount2(cstring(target), cint(flags)))
 
+proc exists(p: string): bool =
+    # Checks if a path exists. Thanks
+    # araq :)
+    try:
+        discard getFileInfo(p)
+        result = true
+    except OSError:
+        result = false
 
 
-proc checkDisksIsMounted(search: tuple[source, target, filesystemtype: string, mountflags: uint64, data: string]): bool =
+proc checkDisksIsMounted(search: tuple[source, target, filesystemtype: string, mountflags: uint64, data: string], expand: bool = false): bool =
     ## Returns true if a disk is already mounted
     for entry in parseFileSystemTable(readFile("/proc/mounts")):
-        if entry.source == search.source and entry.target == search.target:
+        if expand:
+            if exists(entry.source) and exists(search.source) and sameFile(entry.source, search.source):
+                return true
+        elif entry.source == search.source:
             return true
     return false
 
@@ -96,7 +108,7 @@ proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
     try:
         logger.info(&"Reading disk entries from {fstab}")
         for entry in parseFileSystemTable(readFile(fstab)):
-            if checkDisksIsMounted(entry):
+            if checkDisksIsMounted(entry, expand=true):
                 logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target}: already mounted")
                 continue
             logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")

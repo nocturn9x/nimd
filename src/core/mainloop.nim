@@ -32,7 +32,7 @@ proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fs
         else:
             logger.info("Skipping disk mounting, did we restart after a critical error?")
     except:
-        logger.fatal(&"A fatal error has occurred while mounting disks, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
+        logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)
     logger.info("Disks mounted")
     logger.info("Processing boot runlevel")

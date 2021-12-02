@@ -86,6 +86,6 @@ when isMainModule:
         main(logger)
     except:
         logger.fatal(&"A fatal unrecoverable error has occurred during startup and NimD cannot continue: {getCurrentExceptionMsg()}")
-        quit(131)  # ENOTRECOVERABLE - State not recoverable
+        nimDExit(logger, 131)  # ENOTRECOVERABLE - State not recoverable
         # This will almost certainly cause the kernel to crash with an error the likes of "Kernel not syncing, attempted to kill init!",
         # but, after all, there isn't much we can do if we can't even initialize *ourselves* is there?
