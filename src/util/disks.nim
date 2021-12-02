@@ -19,13 +19,14 @@ import posix
 import logging
 import misc
 
-const virtualFileSystems: seq[tuple[source: cstring, target: cstring, filesystemtype: cstring, mountflags: culong, data: cstring]] = @[
-    (source: cstring("proc"), target: cstring("/proc"), filesystemtype: cstring("proc"), mountflags: culong(0), data: cstring("nosuid,noexec,nodev")),
-    (source: cstring("sys"), target: cstring("/sys"), filesystemtype: cstring("sysfs"), mountflags: culong(0), data: cstring("nosuid,noexec,nodev")),
-    (source: cstring("run"), target: cstring("/run"), filesystemtype: cstring("tmpfs"), mountflags: culong(0), data: cstring("mode=0755,nosuid,nodev")),
-    (source: cstring("dev"), target: cstring("/dev"), filesystemtype: cstring("devtmpfs"), mountflags: culong(0), data: cstring("mode=0755,nosuid")),
-    (source: cstring("devpts"), target: cstring("/dev/pts"), filesystemtype: cstring("devpts"), mountflags: culong(0), data: cstring("mode=0620,gid=5,nosuid,noexec")),
-    (source: cstring("shm"), target: cstring("/dev/shm"), filesystemtype: cstring("tmpfs"), mountflags: culong(0), data: cstring("mode=1777,nosuid,nodev")),
+
+const virtualFileSystems: seq[tuple[source: string, target: string, filesystemtype: string, mountflags: uint64, data: string]] = @[
+    (source: "proc", target: ("/proc"), filesystemtype: ("proc"), mountflags: 0u64, data: "nosuid,noexec,nodev"),
+    (source: ("sys"), target: ("/sys"), filesystemtype: ("sysfs"), mountflags: 0u64, data: ("nosuid,noexec,nodev")),
+    (source: ("run"), target: ("/run"), filesystemtype: ("tmpfs"), mountflags: 0u64, data: ("mode=0755,nosuid,nodev")),
+    (source: ("dev"), target: ("/dev"), filesystemtype: ("devtmpfs"), mountflags: 0u64, data: ("mode=0755,nosuid")),
+    (source: ("devpts"), target: ("/dev/pts"), filesystemtype: ("devpts"), mountflags: 0u64, data: ("mode=0620,gid=5,nosuid,noexec")),
+    (source: ("shm"), target: ("/dev/shm"), filesystemtype: ("tmpfs"), mountflags: 0u64, data: ("mode=1777,nosuid,nodev")),
 
 ]
 
@@ -41,6 +42,8 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source, target, filesystemt
     ## IndexDefect exception (when an entry is incomplete) that should be caught by 
     ## the caller. No other checks other than very basic syntax are performed, as 
     ## that job is delegated to the operating system.
+    ## Note that this function automatically converts UUID/LABEL/PARTUUID/ID directives
+    ## to their corresponding symlink just like the mount command would do on a Linux system.
     var temp: seq[string] = @[]
     var line: string = ""
     for l in fstab.splitlines():
@@ -52,6 +55,14 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source, target, filesystemt
         # This madness will make sure we only get (hopefully) 6 entries
         # in our temporary list
         temp = line.split().filterIt(it != "").join(" ").split(maxsplit=6)
+        if temp[0].toLowerAscii().startswith("id="):
+            temp[0] = &"""/dev/disk/by-id/{temp[0].split("=", maxsplit=2)[1]}"""
+        if temp[0].toLowerAscii().startswith("label="):
+            temp[0] = &"""/dev/disk/by-label/{temp[0].split("=", maxsplit=2)[1]}"""
+        if temp[0].toLowerAscii().startswith("uuid="):
+            temp[0] = &"""/dev/disk/by-uuid/{temp[0].split("=", maxsplit=2)[1]}"""
+        if temp[0].toLowerAscii().startswith("partuuid="):
+            temp[0] = &"""/dev/disk/by-partuuid/{temp[0].split("=", maxsplit=2)[1]}"""
         result.add((source: temp[0], target: temp[1], filesystemtype: temp[2], mountflags: 0u64, data: temp[3]))
 
 
@@ -71,11 +82,23 @@ proc umount*(target: string): int = int(umount(cstring(target)))
 proc umount2*(target: string, flags: int): int = int(umount2(cstring(target), cint(flags)))
 
 
+
+proc checkDisksIsMounted(search: tuple[source, target, filesystemtype: string, mountflags: uint64, data: string]): bool =
+    ## Returns true if a disk is already mounted
+    for entry in parseFileSystemTable(readFile("/proc/mounts")):
+        if entry.source == search.source and entry.target == search.target:
+            return true
+    return false
+
+
 proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
     ## Mounts real disks from /etc/fstab
     try:
         logger.info(&"Reading disk entries from {fstab}")
         for entry in parseFileSystemTable(readFile(fstab)):
+            if checkDisksIsMounted(entry):
+                logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target}: already mounted")
+                continue
             logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
             logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}')")
             var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
@@ -95,6 +118,9 @@ proc mountVirtualDisks*(logger: Logger) =
     ## Mounts POSIX virtual filesystems/partitions,
     ## such as /proc and /sys
     for entry in virtualFileSystems:
+        if checkDisksIsMounted(entry):
+            logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target}: already mounted")
+            continue
         logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
         logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}')")
         var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
@@ -115,6 +141,9 @@ proc unmountAllDisks*(logger: Logger, code: int) =
     try:
         logger.info(&"Reading disk entries from /proc/mounts")
         for entry in parseFileSystemTable(readFile("/proc/mounts")):
+            if not checkDisksIsMounted(entry):
+                logger.debug(&"Skipping unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}: not mounted")
+                continue
             logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
             logger.trace(&"Calling umount('{entry.target}')")
             var retcode = umount(entry.target)
