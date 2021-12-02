@@ -57,7 +57,7 @@ proc parseFileSystemTable*(fstab: string): seq[tuple[source, target, filesystemt
         # in our temporary list
         temp = line.split().filterIt(it != "").join(" ").split(maxsplit=6)
         if temp[0].toLowerAscii().startswith("id="):
-            temp[0] = &"""disk/by-id/{temp[0].split("=", maxsplit=2)[1]}"""
+            temp[0] = &"""/dev/disk/by-id/{temp[0].split("=", maxsplit=2)[1]}"""
         if temp[0].toLowerAscii().startswith("label="):
             temp[0] = &"""/dev/disk/by-label/{temp[0].split("=", maxsplit=2)[1]}"""
         if temp[0].toLowerAscii().startswith("uuid="):
