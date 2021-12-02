@@ -86,8 +86,4 @@ proc setHostname*(logger: Logger): string =
 proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
 
 
-proc handleControlC* {.noconv.} =
-    raise newException(CtrlCException, "Interrupted by Ctrl+C")
-
-
 proc strsignal*(sig: cint): cstring {.header:"string.h", importc.}

@@ -47,7 +47,6 @@ proc main(logger: Logger) =
 
 
 when isMainModule:
-    setControlCHook(handleControlC)
     var logger = getDefaultLogger()
     var optParser = initOptParser(commandLineParams())
     for kind, key, value in optParser.getopt():
