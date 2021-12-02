@@ -109,9 +109,11 @@ proc getDefaultLogger*(): Logger =
     proc logFatal(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgBlack)
         setBackgroundColor(bgRed)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - FATAL] {message}""")
-        setForegroundColor(fgDefault)
+        stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - FATAL]""")
+        setForegroundColor(fgRed)
         setBackgroundColor(bgDefault)
+        stderr.writeline(&" {message}")
+        setForegroundColor(fgDefault)
 
     result = newLogger()
     result.addHandler(createHandler(logTrace, LogLevel.Trace))
