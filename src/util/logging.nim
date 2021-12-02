@@ -13,6 +13,7 @@
 # limitations under the License.
 
 # A simple logging module inspired by python's own logging facility
+import terminal
 import strformat
 import times
 
@@ -72,28 +73,45 @@ proc getDefaultLogger*(): Logger =
     ## level that writes the given message to the
     ## standard error with some basic info like the
     ## current date and time and the log level
+    
+    setStdIoUnbuffered()   # Just in case
 
     proc logTrace(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgMagenta)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - TRACE] {message}""")
+        setForegroundColor(fgDefault)
     
     proc logDebug(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgCyan)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - DEBUG] {message}""")
-    
+        setForegroundColor(fgDefault)
+
     proc logInfo(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgGreen)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - INFO] {message}""")
+        setForegroundColor(fgDefault)
 
     proc logWarning(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgYellow)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - WARNING] {message}""")
+        setForegroundColor(fgDefault)
 
     proc logError(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgRed)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - ERROR] {message}""")
+        setForegroundColor(fgDefault)
 
     proc logCritical(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgRed)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - CRITICAL] {message}""")
+        setForegroundColor(fgDefault)
 
     proc logFatal(self: LogHandler, logger: Logger, message: string) =
+        setForegroundColor(fgBlack)
+        setBackgroundColor(bgRed)
         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - FATAL] {message}""")
-
+        setForegroundColor(fgDefault)
+        setBackgroundColor(bgDefault)
 
     result = newLogger()
     result.addHandler(createHandler(logTrace, LogLevel.Trace))

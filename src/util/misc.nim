@@ -16,6 +16,7 @@
 ## to allow a clean shutdown of NimD
 import os
 import strformat
+import strutils
 
 
 import logging
@@ -36,8 +37,8 @@ proc removeShutdownHandler*(handler: proc (logger: Logger, code: int)) =
             shutdownHandlers.delete(i)
 
 
-proc nimDExit*(logger: Logger, code: int) =
-    logger.warning("The system is being shut down!")
+proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
+    logger.warning("The system is shutting down")
     # TODO
     logger.info("Processing shutdown runlevel")
     # TODO
@@ -48,13 +49,38 @@ proc nimDExit*(logger: Logger, code: int) =
     except:
         logger.error(&"An error has occurred while calling shutdown handlers. Error -> {getCurrentExceptionMsg()}")
         # Note: continues calling handlers!
-    logger.info("Terminating child processes with SIGINT")
-    # TODO
-    logger.info("Terminating child processes with SIGKILL")
-    # TODO
-    logger.warning("Shutdown procedure complete, sending final termination signal")
-    # TODO
-    quit(code)  # Replace with syscall(REBOOT, ...)
+    if emerg:
+        # We're in emergency mode: do not crash the kernel, spawn a shell and exit
+        logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
+        discard execShellCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
+    else:
+        logger.info("Terminating child processes with SIGINT")
+        # TODO
+        logger.info("Terminating child processes with SIGKILL")
+        # TODO
+        logger.warning("Shutdown procedure complete, sending final termination signal")
+        # TODO
+    quit(code)
+
+
+proc setHostname*(logger: Logger): string =
+    ## Sets the machine's hostname. Returns 
+    ## the hostname that has been set or an
+    ## empty string if an error occurs. If
+    ## /etc/hostname doesn't exist, the hostname
+    ## defaults to localhost
+    var hostname: string
+    try:
+        if not fileExists("/etc/hostname"):
+            logger.warning("/etc/hostname doesn't exist, defaulting to 'localhost'")
+            hostname = "localhost"
+        else:
+            hostname = readFile("/etc/hostname").strip(chars={'\n'})
+        writeFile("/proc/sys/kernel/hostname", hostname)
+    except:
+        logger.error(&"An error occurred while setting hostname -> {getCurrentExceptionMsg()}")
+        return ""
+    return hostname
 
 
 proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
@@ -62,3 +88,6 @@ proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
 
 proc handleControlC* {.noconv.} =
     raise newException(CtrlCException, "Interrupted by Ctrl+C")
+
+
+proc strsignal*(sig: cint): cstring {.header:"string.h", importc.}

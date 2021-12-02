@@ -145,6 +145,7 @@ proc checkDisksIsMounted(search: tuple[source, target, filesystemtype: string, m
 
 proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
     ## Mounts real disks from /etc/fstab
+    var retcode = 0
     try:
         logger.debug(&"Reading disk entries from {fstab}")
         for entry in parseFileSystemTable(readFile(fstab)):
@@ -153,7 +154,7 @@ proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
                 continue
             logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
             logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}')")
-            var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
+            retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
             logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
             if retcode == -1:
                 logger.error(&"Mounting {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
@@ -169,13 +170,15 @@ proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
 proc mountVirtualDisks*(logger: Logger) =
     ## Mounts POSIX virtual filesystems/partitions,
     ## such as /proc and /sys
+    
+    var retcode = 0
     for entry in virtualFileSystems:
         if checkDisksIsMounted(entry):
             logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target}: already mounted")
             continue
         logger.debug(&"Mounting filesystem {entry.source} ({entry.filesystemtype}) at {entry.target} with mount option(s) {entry.data}")
         logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}')")
-        var retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
+        retcode = mount(entry.source, entry.target, entry.filesystemtype, entry.mountflags, entry.data)
         logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.filesystemtype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
         if retcode == -1:
             logger.error(&"Mounting disk {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
@@ -189,26 +192,28 @@ proc mountVirtualDisks*(logger: Logger) =
 
 proc unmountAllDisks*(logger: Logger, code: int) =
     ## Unmounts all currently mounted disks, including the ones that
-    ## were not mounted trough fstab and virtual filesystems
+    ## were not mounted trough fstab but excluding virtual filesystems
     var flag: bool = false
+    var retcode = 0
     try:
         logger.info("Detaching real filesystems")
         logger.debug(&"Reading disk entries from /proc/mounts")
         for entry in parseFileSystemTable(readFile("/proc/mounts")):
-            flag = false
             if entry.source in ["proc", "sys", "run", "dev", "devpts", "shm"]:
-                continue   # We cannot detach the vfs just yet, we'll do it later
+                flag = true   # We don't detach the vfs
             for path in ["/proc", "/sys", "/run", "/dev", "/dev/pts", "/dev/shm"]:
                 if entry.target.startswith(path):
                     flag = true
             if flag:
+                flag = false
+                logger.debug(&"Skipping unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target} as it is a virtual filesystem")
                 continue
             if not checkDisksIsMounted(entry):
                 logger.debug(&"Skipping unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}: not mounted")
                 continue
             logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
             logger.trace(&"Calling umount2('{entry.target}', MNT_DETACH)")
-            var retcode = umount2(entry.target, 2)   # MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
+            # var retcode = umount2(entry.target, 2)   # 2 = MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
             logger.trace(&"umount2('{entry.target}', MNT_DETACH) returned {retcode}")
             if retcode == -1:
                 logger.error(&"Unmounting disk {entry.source} from {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
@@ -216,21 +221,6 @@ proc unmountAllDisks*(logger: Logger, code: int) =
                 posix.errno = cint(0)
             else:
                 logger.debug(&"Unmounted {entry.source} from {entry.target}")
-        logger.info("Detaching virtual filesystems")
-        for entry in virtualFileSystems:
-            if not checkDisksIsMounted(entry):
-                logger.debug(&"Skipping unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}: not mounted")
-                continue
-            logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
-            logger.trace(&"Calling umount2('{entry.target}', MNT_DETACH)")
-            var retcode = umount2(entry.target, 2)   # MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
-            logger.trace(&"umount('{entry.target}') returned {retcode}")
-            if retcode == -1:
-                logger.error(&"Unmounting disk {entry.source} from {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
-                # Resets the error code
-                posix.errno = cint(0)
-            else:
-                logger.debug(&"Unmounted {entry.source} from {entry.target}")
     except ValueError:  # Check parseFileSystemTable for more info on this catch block
-        logger.fatal("Improperly formatted /etc/mtab, exiting")
+        logger.fatal(&"A fatal error occurred while unmounting disks: {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)

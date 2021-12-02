@@ -36,6 +36,12 @@ proc main(logger: Logger) =
     if uid != 0:
         logger.fatal(&"NimD must run as root, but current user id is {uid}")
         quit(EPERM)   # EPERM - Operation not permitted
+    logger.debug("Setting up dummy signal handlers")
+    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV,
+            SIGTRAP, SIGTERM, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGINT):  # 6 is SIGIOT
+        # Can't capture local variables because this implicitly generates
+        # a noconv procedure
+        getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
     logger.debug("Starting uninterruptible mainloop")
     mainLoop(logger)
 
