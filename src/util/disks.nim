@@ -213,7 +213,7 @@ proc unmountAllDisks*(logger: Logger, code: int) =
                 continue
             logger.debug(&"Unmounting filesystem {entry.source} ({entry.filesystemtype}) from {entry.target}")
             logger.trace(&"Calling umount2('{entry.target}', MNT_DETACH)")
-            # var retcode = umount2(entry.target, 2)   # 2 = MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
+            var retcode = umount2(entry.target, 2)   # 2 = MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
             logger.trace(&"umount2('{entry.target}', MNT_DETACH) returned {retcode}")
             if retcode == -1:
                 logger.error(&"Unmounting disk {entry.source} from {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
