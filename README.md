@@ -6,7 +6,7 @@ A minimal, self-contained, dependency-based Linux init system written in Nim.
 The code in here is pretty bad: in fact, it's horrible (and it _barely_ works). I'm just messing around to get the basics done, sorry for that, 
 but I need to get a proof of concept done before starting to do some actually sensible programming.
 
-I mainly made this thing for fun and as an excuse to learn more about the mysterious PID 1 and the Linux kernel in general: if you are like me
+I mainly made this thing for fun and as an excuse to learn more about the mysterious PID 1 and the Linux kernel in general. If you are like me
 and love getting your hands dirty, I truly recommend trying an endeavor like this as I haven't had this fun cobbling something together in a very
 long time. Sometimes programming only large scale software is boring, go figure.
 
@@ -18,7 +18,7 @@ using the 5.15.5-artix1-1 linux kernel.
 
 Also, NimD is developed **for Linux only**, as that's the kernel my OS uses: other kernels are not supported at all and NimD
 **will** explode with fancy fireworks if you try to run it unmodified on other kernels (although probably things like BSD and Solaris
-are not that hard to add support for using some `when defined()` clauses and changing what virtual filesystems NimD expects to mount)
+are not that hard to add support for using some `when defined()` clauses and changing what virtual filesystems NimD expects to mount).
 
 NimD is not particularly secure. Actually it's probably very insecure by modern standards, but basic checks like making sure regular users
 can't reboot the machine are (_actually_, will be) at least in place, so there's that I guess.
