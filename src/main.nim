@@ -1,4 +1,4 @@
-# Copyright 2021 Mattia Giambirtone & All Contributors
+# Copyright 2021 Mattia Giambirbone & All Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,17 +26,17 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     ## NimD's entry point and setup
     ## function
     logger.debug("Starting NimD: A minimal, self-contained dependency-based Linux init system written in Nim")
-    logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
+    logger.info(fmt"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
     logger.trace("Calling getCurrentProcessId()")
     let pid = getCurrentProcessId()
-    logger.trace(&"getCurrentProcessId() returned {pid}")
+    logger.trace(fmt"getCurrentProcessId() returned {pid}")
     if pid != 1:
-        logger.warning(&"Expecting to run as PID 1, but current process ID is {pid}")
+        logger.warning(fmt"Expecting to run as PID 1, but current process ID is {pid}")
     logger.trace("Calling getuid()")
     let uid = posix.getuid()
-    logger.trace(&"getuid() returned {uid}")
+    logger.trace(fmt"getuid() returned {uid}")
     if uid != 0:
-        logger.fatal(&"NimD must run as root, but current user id is {uid}")
+        logger.fatal(fmt"NimD must run as root, but current user id is {uid}")
         nimDExit(logger, EPERM)   # EPERM - Operation not permitted
     logger.trace("Setting up signal handlers")
     onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
@@ -46,7 +46,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
         # a better solution long-term because we need the configuration from
         # our own logger object (otherwise we'd always create a new one and
         # never switch our logs to file once booting is completed)
-        getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
+        getDefaultLogger().warning(fmt"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
     onSignal(SIGCHLD):
         # One of the key features of an init system is reaping child
         # processes!
@@ -84,13 +84,13 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
         else:
             logger.info("Skipping disk mounting, assuming this has already been done")
     except:
-        logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
+        logger.fatal(fmt"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131, emerg=false)
     logger.info("Disks mounted")
     logger.debug("Calling sync() just in case")
     doSync(logger)
     logger.info("Setting hostname")
-    logger.debug(&"Hostname was set to '{setHostname(logger)}'")
+    logger.debug(fmt"Hostname was set to '{setHostname(logger)}'")
     logger.info("Creating symlinks")
     createSymlinks(logger)
     logger.info("Creating directories")
@@ -117,7 +117,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
         # a better solution long-term because we need the configuration from
         # our own logger object (otherwise we'd always create a new one and
         # never switch our logs to file once booting is completed)
-        getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
+        getDefaultLogger().warning(fmt"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
     onSignal(SIGCHLD):
         # One of the key features of an init system is reaping child
         # processes!
@@ -149,7 +149,7 @@ when isMainModule:
                     of "extra":
                         logger.setLevel(LogLevel.Trace)
                     else:
-                        logger.error(&"Unkown command-line long option '{key}'")
+                        logger.error(fmt"Unkown command-line long option '{key}'")
                         quit(EINVAL)  # EINVAL - Invalid argument
             of cmdShortOption:
                 case key:
@@ -173,7 +173,7 @@ when isMainModule:
     try:
         main(logger)
     except:
-        logger.fatal(&"A fatal unrecoverable error has occurred during startup and NimD cannot continue: {getCurrentExceptionMsg()}")
+        logger.fatal(fmt"A fatal unrecoverable error has occurred during startup and NimD cannot continue: {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)  # ENOTRECOVERABLE - State not recoverable
         # This will almost certainly cause the kernel to crash with an error the likes of "Kernel not syncing, attempted to kill init!",
         # but, after all, there isn't much we can do if we can't even initialize *ourselves* is there?
