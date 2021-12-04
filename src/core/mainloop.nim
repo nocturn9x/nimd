@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import segfaults   # Makes us catch segfaults as NilAccessDefect exceptions!
 import strformat
+
 
 
 import ../util/[logging, misc]
@@ -27,8 +27,8 @@ proc mainLoop*(logger: Logger) =
     logger.info("System initialization complete, going idle")
     while true:
         try:
-            # TODO
-            sleepSeconds(5)
+            logger.info(&"Working...")
+            sleepSeconds(30)
         except:
             logger.critical(&"A critical error has occurred while running, restarting the mainloop! Error -> {getCurrentExceptionMsg()}")
             # We *absolutely* cannot die

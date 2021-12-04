@@ -100,93 +100,102 @@ proc removeService*(service: Service) =
 
 proc supervisorWorker(logger: Logger, service: Service, pid: int) =
     ## This is the actual worker that supervises the service process
+    logger.trace(&"New supervisor for service '{service.name}' has been spawned")
     var pid = pid
     var status: cint
     var returnCode: int
     var sig: int
+    var process: Process
     while true:
-        returnCode = posix.waitPid(Pid(pid), status, WUNTRACED)
+        returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
         if WIFEXITED(status):
             sig = 0
         elif WIFSIGNALED(status):
             sig = WTERMSIG(status)
         else:
             sig = -1
-        if service.restartOnFailure and sig > 0:
-            logger.info(&"Service {service.name} has exited with return code {returnCode} (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+        if sig > 0 and service.restartOnFailure:
+            logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
             removeManagedProcess(pid)
             sleepSeconds(service.restartDelay)
             var split = shlex(service.exec)
             if split.error:
-                logger.error(&"Error while starting service {service.name}: invalid exec syntax")
-                return
+                logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+                break
             var arguments = split.words
             let progName = arguments[0]
             arguments = arguments[1..^1]
-            pid = startProcess(progName, workingDir=service.workDir, args=arguments, options={poParentStreams}).processID()
-        else:
-            logger.info(&"Service {service.name} has exited with return code {returnCode}), shutting down controlling process")
+            process = startProcess(progName, workingDir=service.workDir, args=arguments)
+            pid = process.processID()
+        elif sig > 0:
+            logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), shutting down controlling process")
             break
-    
-    
+        else:
+            logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
+            break
+    if process != nil:
+        process.close()
+
 
 proc startService(logger: Logger, service: Service) =
     ## Starts a single service (this is called by
     ## startServices below until all services have
     ## been started)
-    
-    var split = shlex(service.exec)
-    if split.error:
-        logger.error(&"Error while starting service {service.name}: invalid exec syntax")
-        return
-    var arguments = split.words
-    let progName = arguments[0]
-    arguments = arguments[1..^1]
+    var process: Process
     try:
-        var process = startProcess(progName, workingDir=service.workDir, args=arguments, options={poParentStreams, })
+        var split = shlex(service.exec)
+        if split.error:
+            logger.error(&"Error while starting service '{service.name}': invalid exec syntax")
+            quit(0)
+        var arguments = split.words
+        let progName = arguments[0]
+        arguments = arguments[1..^1]
+        process = startProcess(progName, workingDir=service.workDir, args=arguments)
         if service.supervised:
             supervisorWorker(logger, service, process.processID)
-    except OSError:
+        # If the service is unsupervised we just exit
+    except:
         logger.error(&"Error while starting service {service.name}: {getCurrentExceptionMsg()}")
+    if process != nil:
+        process.close()
     quit(0)
 
 
-proc startServices*(logger: Logger, workers: int = 1, level: RunLevel) =
-    ## Starts the services in the given
-    ## runlevel. The workers parameter
-    ## configures parallelism and allows
-    ## for faster boot times by starting
-    ## services concurrently rather than 
-    ## sequentially (1 to disable parallelism).
-    ## Note this function immediately returns to
-    ## the caller and forks in the background
-    echo posix.getpid()
-    discard readLine(stdin)
+proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
+    ## Starts the registered services in the 
+    ## given runlevel
+    if workers > cpuinfo.countProcessors() - 1:
+        logger.warning(&"The configured number of workers ({workers}) is greater than the recommended one ({cpuinfo.countProcessors() - 1}), performance may degrade")
+    var workerCount: int = 0
+    var status: cint
     var pid: int = posix.fork()
     if pid == -1:
-        logger.fatal(&"Could not fork(): {posix.strerror(posix.errno)}")
-        return
+        logger.error(&"Error, cannot fork: {posix.strerror(posix.errno)}")
     elif pid == 0:
-        quit(0)
-    var servicesCopy: seq[Service] = @[]
-    echo servicesCopy.len(), " ", posix.getpid()
-    for service in services:
-        if service.runlevel == level:
-            servicesCopy.add(service)
-    echo servicesCopy.len(), " ", posix.getpid()
-    if workers > cpuinfo.countProcessors() * 2 - 1:
-        logger.warning(&"The configured workers count is beyond the recommended threshold ({workers} > {cpuinfo.countProcessors() * 2 - 1}), performance may degrade")
-    while servicesCopy.len() > 0:
-        echo servicesCopy.len(), " ", posix.getpid()
-        sleepSeconds(5)
-        for i in 1..workers:
+        logger.debug("Started service spawner process")
+        var servicesCopy: seq[Service] = @[]
+        for service in services:
+            if service.runlevel == level:
+                servicesCopy.add(service)
+        while servicesCopy.len() > 0:
+            if workerCount == workers:
+                discard waitPid(cint(pid), status, WUNTRACED)
+                dec(workerCount)
             pid = posix.fork()
             if pid == -1:
                 logger.error(&"An error occurred while forking to spawn services, trying again: {posix.strerror(posix.errno)}")
             elif pid == 0:
-                logger.info(&"Starting service {servicesCopy[0].name}")
+                logger.trace(&"New child has been spawned")
+                if not servicesCopy[0].supervised:
+                    logger.info(&"Starting unsupervised service '{servicesCopy[0].name}'")
+                else:
+                    logger.info(&"Starting supervised service '{servicesCopy[0].name}'")
                 startService(logger, servicesCopy[0])
-            else:
-                if servicesCopy.len() > 0 and servicesCopy[0].supervised:
+            elif servicesCopy.len() > 0:
+                workerCount += 1
+                if servicesCopy[0].supervised:
                     addManagedProcess(pid, servicesCopy[0])
-            
+                servicesCopy.del(0)
+        quit(0)
+    else:
+        discard waitPid(cint(pid), status, WUNTRACED)

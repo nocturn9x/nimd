@@ -15,6 +15,7 @@
 # A simple logging module inspired by python's own logging facility
 import terminal
 import strformat
+import posix
 import times
 
 
@@ -73,47 +74,55 @@ proc getDefaultLogger*(): Logger =
     ## level that writes the given message to the
     ## standard error with some basic info like the
     ## current date and time and the log level
-    
+        
     setStdIoUnbuffered()   # Just in case
 
     proc logTrace(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgMagenta)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - TRACE] {message}""")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - TRACE ({posix.getpid()})] {message}""")
+        stderr.flushFile()
         setForegroundColor(fgDefault)
     
     proc logDebug(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgCyan)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - DEBUG] {message}""")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - DEBUG ({posix.getpid()})] {message}""")
+        stderr.flushFile()
         setForegroundColor(fgDefault)
 
     proc logInfo(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgGreen)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - INFO] {message}""")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - INFO ({posix.getpid()})] {message}""")
+        stderr.flushFile()
         setForegroundColor(fgDefault)
 
     proc logWarning(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgYellow)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - WARNING] {message}""")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - WARNING ({posix.getpid()})] {message}""")
+        stderr.flushFile()
         setForegroundColor(fgDefault)
 
     proc logError(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgRed)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - ERROR] {message}""")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - ERROR ({posix.getpid()})] {message}""")
+        stderr.flushFile()
         setForegroundColor(fgDefault)
 
     proc logCritical(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgRed)
-        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - CRITICAL] {message}""")
+        stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - CRITICAL ({posix.getpid()})] {message}""")
+        stderr.flushFile()
         setForegroundColor(fgDefault)
 
     proc logFatal(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgBlack)
         setBackgroundColor(bgRed)
-        stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - FATAL]""")
+        stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss")} - FATAL ({posix.getpid()})]""")
         setForegroundColor(fgRed)
         setBackgroundColor(bgDefault)
         stderr.writeline(&" {message}")
         setForegroundColor(fgDefault)
+        stderr.flushFile()
+
 
     result = newLogger()
     result.addHandler(createHandler(logTrace, LogLevel.Trace))

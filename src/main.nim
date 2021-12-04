@@ -39,8 +39,8 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
         logger.fatal(&"NimD must run as root, but current user id is {uid}")
         nimDExit(logger, EPERM)   # EPERM - Operation not permitted
     logger.trace("Setting up signal handlers")
-    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGTSTP,
-            SIGTRAP, SIGTERM, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGINT):  # 6 is SIGIOT
+    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
+            SIGTRAP, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGTERM, SIGINT):  # 6 is SIGIOT
         # Can't capture local variables because this implicitly generates
         # a noconv procedure, so we use getDefaultLogger() instead. Must find
         # a better solution long-term because we need the configuration from
@@ -51,6 +51,9 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
         # One of the key features of an init system is reaping child
         # processes!
         reapProcess(getDefaultLogger())
+    onSignal(SIGINT):
+        # Temporary
+        nimDExit(getDefaultLogger(), 131, emerg=true)
     addSymlink(newSymlink(dest="/dev/fd", source="/proc/self/fd"))
     addSymlink(newSymlink(dest="/dev/fd/0", source="/proc/self/fd/0"))
     addSymlink(newSymlink(dest="/dev/fd/1", source="/proc/self/fd/1"))
@@ -90,12 +93,38 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     logger.debug(&"Hostname was set to '{setHostname(logger)}'")
     logger.info("Creating symlinks")
     createSymlinks(logger)
+    logger.info("Creating directories")
     createDirectories(logger)
+    logger.debug("Entering critical fork() section: blocking signals")
+    var sigset: Sigset
+    # TODO
     logger.info("Processing boot runlevel")
-    addService(newService(name="Test", description="prints owo", exec="/bin/echo owo",
+    addService(newService(name="echoer", description="prints owo", exec="/bin/echo owo",
                           runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
                           supervised=false, restartOnFailure=false, restartDelay=0))
-    startServices(logger, workers=1, level=Boot)
+    addService(newService(name="sleeper", description="la mamma di licenziato", 
+                         exec="/usr/bin/sleep 10", supervised=true, restartOnFailure=true,
+                         restartDelay=5, runlevel=Boot, workDir="/home", kind=Simple))
+    addService(newService(name="errorer", description="la mamma di gavd", 
+                         exec="/bin/false", supervised=true, restartOnFailure=true,
+                         restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
+    startServices(logger, workers=2, level=Boot)
+    logger.debug("Setting up real signal handlers")
+    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
+            SIGTRAP, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGTERM):  # 6 is SIGIOT
+        # Can't capture local variables because this implicitly generates
+        # a noconv procedure, so we use getDefaultLogger() instead. Must find
+        # a better solution long-term because we need the configuration from
+        # our own logger object (otherwise we'd always create a new one and
+        # never switch our logs to file once booting is completed)
+        getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
+    onSignal(SIGCHLD):
+        # One of the key features of an init system is reaping child
+        # processes!
+        reapProcess(getDefaultLogger())
+    onSignal(SIGINT):
+        # Temporary
+        nimDExit(getDefaultLogger(), 131, emerg=true)
     logger.debug("Starting main loop")
     mainLoop(logger)
 
@@ -144,7 +173,6 @@ when isMainModule:
     try:
         main(logger)
     except:
-        raise
         logger.fatal(&"A fatal unrecoverable error has occurred during startup and NimD cannot continue: {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)  # ENOTRECOVERABLE - State not recoverable
         # This will almost certainly cause the kernel to crash with an error the likes of "Kernel not syncing, attempted to kill init!",

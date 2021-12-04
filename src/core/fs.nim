@@ -240,7 +240,6 @@ proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
             if checkDiskIsMounted(entry, expand=true):
                 logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.fstype}) at {entry.target}: already mounted")
                 continue
-            logger.debug(&"fsck returned status code {retcode}")
             logger.debug(&"Mounting filesystem {entry.source} ({entry.fstype}) at {entry.target} with mount option(s) {entry.data}")
             logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}')")
             retcode = mount(entry.source, entry.target, entry.fstype, entry.mountflags, entry.data)

@@ -79,6 +79,15 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     ## NimD's exit point. This function tries to shut down
     ## as cleanly as possible. When emerg equals true, it will
     ## try to spawn a root shell and exit
+    if emerg:
+        var status: cint
+        # We're in emergency mode: do not crash the kernel, spawn a shell and exit
+        logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
+        logger.info("Terminating child processes with SIGKILL")
+        discard posix.kill(SIGKILL, -1)
+        discard posix.waitPid(-1, status, 0)
+        discard execShellCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
+        quit(-1)
     logger.warning("The system is shutting down")
     logger.info("Processing shutdown runlevel")
     # TODO
@@ -89,22 +98,15 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     except:
         logger.error(&"An error has occurred while calling shutdown handlers. Error -> {getCurrentExceptionMsg()}")
         # Note: continues calling handlers!
-    if emerg:
-        # We're in emergency mode: do not crash the kernel, spawn a shell and exit
-        logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
-        discard execShellCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
-    else:
-        logger.info("Terminating child processes with SIGTERM")
-        logger.debug(&"Waiting {sigTermDelay} seconds for the kernel to deliver signals")
-        discard posix.kill(SIGTERM, -1)  # The kernel handles this for us asynchronously
-        var t = cpuTime()
-        # We wait some time for the signals to propagate
-        while anyUserlandProcessLeft():
-            sleepSeconds(0.25)
-            if cpuTime() - t >= sigTermDelay:
-                break
-        if anyUserlandProcessLeft():
-            logger.info("Terminating child processes with SIGKILL")
-            discard posix.kill(SIGKILL, -1)
-        logger.warning("Shutdown procedure complete, sending final termination signal")
+    logger.info("Terminating child processes with SIGTERM")
+    logger.debug(&"Waiting up to {sigTermDelay} seconds for the kernel to deliver signals")
+    discard posix.kill(SIGTERM, -1)  # The kernel handles this for us asynchronously
+    var t = cpuTime()
+    # We wait some time for the signals to propagate
+    while anyUserlandProcessLeft() or cpuTime() - t >= sigTermDelay:
+        sleepSeconds(0.25)
+    if anyUserlandProcessLeft():
+        logger.info("Terminating child processes with SIGKILL")
+        discard posix.kill(SIGKILL, -1)
+    logger.warning("Shutdown procedure complete, sending final termination signal")
     quit(code)
