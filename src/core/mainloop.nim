@@ -24,6 +24,8 @@ proc mainLoop*(logger: Logger) =
     ## NimD's main execution loop
     logger.info("Processing default runlevel")
     startServices(logger, workers=1, level=Default)
+    logger.debug(&"Unblocking signals")
+    unblockSignals(logger)
     logger.info("System initialization complete, going idle")
     while true:
         try:

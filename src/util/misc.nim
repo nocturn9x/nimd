@@ -22,6 +22,7 @@ import posix
 
 
 import logging
+import ../core/shutdown
 
 
 proc sleepSeconds*(amount: SomeNumber) = sleep(int(amount * 1000))
@@ -32,6 +33,39 @@ proc doSync*(logger: Logger) =
     ## Performs a sync() system call
     logger.debug(&"Calling sync() syscall has returned {syscall(SYNC)}")    
 
+
+proc dummySigHandler(x: cint) {.noconv.} = discard
+
+
+proc blockSignals*(logger: Logger) =
+    ## Temporarily blocks all signals
+    ## for critical sections of code
+    
+    var tmp: Sigset
+    var sigaction: Sigaction
+    sigaction.sa_handler = dummySigHandler
+    sigaction.sa_flags = SA_RESTART
+    if posix.sigfillset(sigaction.sa_mask) == -1:
+        logger.fatal(&"Could not initialize signal lock (code {posix.errno}, {posix.strerror(posix.errno)}): environment is not safe, exiting now!")
+        nimDExit(logger, 131)
+    if posix.sigprocmask(SIG_SETMASK, sigaction.sa_mask, tmp) == -1:
+        logger.fatal(&"Could not apply signal mask to process (code {posix.errno}, {posix.strerror(posix.errno)}): environment is not safe, exiting now!")
+        nimDExit(logger, 131)
+
+
+proc unblockSignals*(logger: Logger) =
+    ## Unblocks all signals
+    var tmp: Sigset
+    var sigaction: Sigaction
+    sigaction.sa_handler = dummySigHandler
+    sigaction.sa_flags = SA_RESTART
+    if posix.sigemptyset(sigaction.sa_mask) == -1:
+        logger.fatal(&"Could not initialize signal unlock (code {posix.errno}, {posix.strerror(posix.errno)}): environment is not safe, exiting now!")
+        nimDExit(logger, 131)
+    if posix.sigprocmask(SIG_SETMASK, sigaction.sa_mask, tmp) == -1:
+        logger.fatal(&"Could not apply signal mask to process (code {posix.errno}, {posix.strerror(posix.errno)}): environment is not safe, exiting now!")
+        nimDExit(logger, 131)
+    
 
 proc reapProcess*(logger: Logger) =
     ## Reaps zombie processes. Note: This does not

@@ -20,7 +20,6 @@ import times
 
 
 import ../util/logging
-import ../util/misc
 
 
 type ShutdownHandler* = ref object
@@ -104,7 +103,7 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     var t = cpuTime()
     # We wait some time for the signals to propagate
     while anyUserlandProcessLeft() or cpuTime() - t >= sigTermDelay:
-        sleepSeconds(0.25)
+        sleep(int(0.25 * 1000))
     if anyUserlandProcessLeft():
         logger.info("Terminating child processes with SIGKILL")
         discard posix.kill(SIGKILL, -1)

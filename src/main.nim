@@ -21,7 +21,6 @@ import util/[logging, constants, misc]
 import core/[mainloop, fs, shutdown, services]
 
 
-
 proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
     ## NimD's entry point and setup
     ## function
@@ -96,8 +95,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     logger.info("Creating directories")
     createDirectories(logger)
     logger.debug("Entering critical fork() section: blocking signals")
-    var sigset: Sigset
-    # TODO
+    blockSignals(logger)
     logger.info("Processing boot runlevel")
     addService(newService(name="echoer", description="prints owo", exec="/bin/echo owo",
                           runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
