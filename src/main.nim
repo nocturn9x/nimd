@@ -18,13 +18,15 @@ import os
 
 # NimD's own stuff
 import util/[logging, constants, misc]
-import core/mainloop
+import core/[mainloop, fs, shutdown, services]
 
 
-proc main(logger: Logger) = 
-    ## NimD's entry point
+
+proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
+    ## NimD's entry point and setup
+    ## function
     logger.debug("Starting NimD: A minimal, self-contained dependency-based Linux init system written in Nim")
-    logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up...")
+    logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
     logger.trace("Calling getCurrentProcessId()")
     let pid = getCurrentProcessId()
     logger.trace(&"getCurrentProcessId() returned {pid}")
@@ -35,17 +37,66 @@ proc main(logger: Logger) =
     logger.trace(&"getuid() returned {uid}")
     if uid != 0:
         logger.fatal(&"NimD must run as root, but current user id is {uid}")
-        quit(EPERM)   # EPERM - Operation not permitted
-    logger.debug("Setting up dummy signal handlers")
-    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
+        nimDExit(logger, EPERM)   # EPERM - Operation not permitted
+    logger.trace("Setting up signal handlers")
+    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGTSTP,
             SIGTRAP, SIGTERM, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGINT):  # 6 is SIGIOT
         # Can't capture local variables because this implicitly generates
-        # a noconv procedure
+        # a noconv procedure, so we use getDefaultLogger() instead. Must find
+        # a better solution long-term because we need the configuration from
+        # our own logger object (otherwise we'd always create a new one and
+        # never switch our logs to file once booting is completed)
         getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
-    logger.debug("Setting up SIGCHLD signal handler")
     onSignal(SIGCHLD):
+        # One of the key features of an init system is reaping child
+        # processes!
         reapProcess(getDefaultLogger())
-    logger.debug("Starting uninterruptible mainloop")
+    addSymlink(newSymlink(dest="/dev/fd", source="/proc/self/fd"))
+    addSymlink(newSymlink(dest="/dev/fd/0", source="/proc/self/fd/0"))
+    addSymlink(newSymlink(dest="/dev/fd/1", source="/proc/self/fd/1"))
+    addSymlink(newSymlink(dest="/dev/fd/2", source="/proc/self/fd/2"))
+    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))
+    addSymlink(newSymlink(dest="/dev/std/out", source="/proc/self/fd/1"))
+    addSymlink(newSymlink(dest="/dev/std/err", source="/proc/self/fd/2"))
+    # Tests here. Check logging output (debug) to see if
+    # they work as intended
+    addSymlink(newSymlink(dest="/dev/std/err", source="/"))  # Should say link already exists and points to /proc/self/fd/2
+    addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Shuld say destination does not exist
+    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
+    # Adds virtual filesystems
+    addVFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
+    addShutdownHandler(newShutdownHandler(unmountAllDisks))
+    try:
+        if mountDisks:
+            logger.info("Mounting filesystem")
+            logger.info("Mounting virtual disks")
+            mountVirtualDisks(logger)
+            logger.info("Mounting real disks")
+            mountRealDisks(logger, fstab)
+        else:
+            logger.info("Skipping disk mounting, assuming this has already been done")
+    except:
+        logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
+        nimDExit(logger, 131, emerg=false)
+    logger.info("Disks mounted")
+    logger.debug("Calling sync() just in case")
+    doSync(logger)
+    logger.info("Setting hostname")
+    logger.debug(&"Hostname was set to '{setHostname(logger)}'")
+    logger.info("Creating symlinks")
+    createSymlinks(logger)
+    createDirectories(logger)
+    logger.info("Processing boot runlevel")
+    addService(newService(name="Test", description="prints owo", exec="/bin/echo owo",
+                          runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
+                          supervised=false, restartOnFailure=false, restartDelay=0))
+    startServices(logger, workers=1, level=Boot)
+    logger.debug("Starting main loop")
     mainLoop(logger)
 
 
@@ -93,6 +144,7 @@ when isMainModule:
     try:
         main(logger)
     except:
+        raise
         logger.fatal(&"A fatal unrecoverable error has occurred during startup and NimD cannot continue: {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)  # ENOTRECOVERABLE - State not recoverable
         # This will almost certainly cause the kernel to crash with an error the likes of "Kernel not syncing, attempted to kill init!",

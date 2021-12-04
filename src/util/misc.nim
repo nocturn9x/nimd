@@ -15,81 +15,46 @@
 ## Default signal handlers, exit procedures and helpers
 ## to allow a clean shutdown of NimD
 import os
-import strformat
 import strutils
 import syscall
+import strformat
+import posix
 
 
 import logging
 
-# Note: This will work reliably only with absolute paths. Use with care
-const symlinks: array[7, tuple[dest, source: string]] = [
-    (dest: "/dev/fd", source: "/proc/self/fd"),
-    (dest: "/dev/fd/0", source: "/proc/self/fd/0"),
-    (dest: "/dev/fd/1", source: "/proc/self/fd/1"),
-    (dest: "/dev/fd/2", source: "/proc/self/fd/2"),
-    (dest: "/dev/std/in", source: "/proc/self/fd/0"),
-    (dest: "/dev/std/out", source: "/proc/self/fd/1"),
-    (dest: "/dev/std/err", source: "/proc/self/fd/2"),
-]
 
-
-var shutdownHandlers: seq[proc (logger: Logger, code: int)] = @[]
+proc sleepSeconds*(amount: SomeNumber) = sleep(int(amount * 1000))
+proc strsignal*(sig: cint): cstring {.header: "string.h", importc.}
 
 
 proc doSync*(logger: Logger) =
+    ## Performs a sync() system call
     logger.debug(&"Calling sync() syscall has returned {syscall(SYNC)}")    
 
 
 proc reapProcess*(logger: Logger) =
+    ## Reaps zombie processes. Note: This does not
+    ## handle restarting crashed service processes,
+    ## it simply makes sure that there's no dead
+    ## process entries in the kernel's ptable.
+    ## When (supervised) services are started,
+    ## they are spawned by a controlling subprocess
+    ## of PID 1 which listens for changes in them
+    ## and restarts them as needed
     logger.debug("Handling SIGCHLD")
-    # TODO
+    var status: cint
+    discard posix.waitPid(-1, status, WNOHANG)   # This doesn't hang, which is what we want
 
 
 proc exists*(p: string): bool =
-    # Checks if a path exists. Thanks
-    # araq :)
+    ## Returns true if a path exists,
+    ## false otherwise
     try:
         discard getFileInfo(p)
         result = true
     except OSError:
         result = false
-
-
-proc addShutdownHandler*(handler: proc (logger: Logger, code: int), logger: Logger) =
-    shutdownHandlers.add(handler)
-
-
-proc removeShutdownHandler*(handler: proc (logger: Logger, code: int)) =
-    for i, h in shutdownHandlers:
-        if h == handler:
-            shutdownHandlers.delete(i)
-
-
-proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
-    logger.warning("The system is shutting down")
-    # TODO
-    logger.info("Processing shutdown runlevel")
-    # TODO
-    logger.info("Running shutdown handlers")
-    try:
-        for handler in shutdownHandlers:
-            handler(logger, code)
-    except:
-        logger.error(&"An error has occurred while calling shutdown handlers. Error -> {getCurrentExceptionMsg()}")
-        # Note: continues calling handlers!
-    if emerg:
-        # We're in emergency mode: do not crash the kernel, spawn a shell and exit
-        logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
-        discard execShellCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
-    else:
-        logger.info("Terminating child processes with SIGINT")
-        # TODO
-        logger.info("Terminating child processes with SIGKILL")
-        # TODO
-        logger.warning("Shutdown procedure complete, sending final termination signal")
-        # TODO
-    quit(code)
 
 
 proc setHostname*(logger: Logger): string =
@@ -110,33 +75,3 @@ proc setHostname*(logger: Logger): string =
         logger.error(&"An error occurred while setting hostname -> {getCurrentExceptionMsg()}")
         return ""
     return hostname
-
-
-proc createSymlinks*(logger: Logger) =
-    ## Creates a set of symlinks needed
-    ## by stuff like Linux ports of BSD
-    ## software
-    for sym in symlinks:
-        try:
-            if not exists(sym.source):
-                logger.warning(&"Skipping creation of symbolic link from {sym.dest} to {sym.source}: destination does not exist")
-                continue
-            elif exists(sym.dest):
-                if symlinkExists(sym.dest) and sameFile(expandSymlink(sym.dest), sym.source):
-                    logger.debug(&"Skipping creation of symbolic link from {sym.dest} to {sym.source}: link already exists")
-                elif symlinkExists(sym.dest) and not sameFile(expandSymlink(sym.dest), sym.source):
-                    logger.warning(&"Attempted to create symbolic link from {sym.dest} to {sym.source}, but link already exists and points to {expandSymlink(sym.dest)}")
-                continue
-            logger.debug(&"Creating symbolic link from {sym.source} to {sym.dest}")
-            createSymlink(sym.dest, sym.source)
-        except:
-            logger.error(&"Failed to create symbolic link from {sym.dest} to {sym.source}: {getCurrentExceptionMsg()}")
-
-
-proc createDirectories*(logger: Logger) =
-    ## Creates 
-
-proc sleepSeconds*(amount: SomeInteger) = sleep(amount * 1000)
-
-
-proc strsignal*(sig: cint): cstring {.header: "string.h", importc.}

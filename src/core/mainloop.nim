@@ -13,38 +13,17 @@
 # limitations under the License.
 import segfaults   # Makes us catch segfaults as NilAccessDefect exceptions!
 import strformat
-import os
 
 
-import ../util/[logging, disks, misc]
+import ../util/[logging, misc]
+import services
 
 
-proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") =
+
+proc mainLoop*(logger: Logger) =
     ## NimD's main execution loop
-    try:
-        addShutdownHandler(unmountAllDisks, logger)
-        if mountDisks:
-            logger.info("Mounting filesystem")
-            logger.info("Mounting virtual disks")
-            mountVirtualDisks(logger)
-            logger.info("Mounting real disks")
-            mountRealDisks(logger, fstab)
-        else:
-            logger.info("Skipping disk mounting, did we restart after a critical error?")
-    except:
-        logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
-        nimDExit(logger, 131)
-    logger.info("Disks mounted")
-    logger.debug("Calling sync() just in case")
-    doSync(logger)
-    logger.info("Setting hostname")
-    logger.debug(&"Hostname was set to '{setHostname(logger)}'")
-    logger.info("Creating symlinks")
-    createSymlinks(logger)
-    logger.info("Processing boot runlevel")
-    # TODO
     logger.info("Processing default runlevel")
-    # TODO
+    startServices(logger, workers=1, level=Default)
     logger.info("System initialization complete, going idle")
     while true:
         try:
@@ -53,4 +32,4 @@ proc mainLoop*(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fs
         except:
             logger.critical(&"A critical error has occurred while running, restarting the mainloop! Error -> {getCurrentExceptionMsg()}")
             # We *absolutely* cannot die
-            mainLoop(logger, mountDisks=false)
+            mainLoop(logger)

@@ -1,0 +1,359 @@
+# Copyright 2021 Mattia Giambirtone & All Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import strutils
+import sequtils
+import strformat
+import posix
+import os
+
+import ../util/[logging, misc]
+import shutdown
+
+
+# Nim wrappers around C functionality in sys/mount.h on Linux
+proc mount*(source: cstring, target: cstring, fstype: cstring,
+            mountflags: culong, data: pointer): cint {.header: "sys/mount.h", importc.}
+# Since cstrings are weak references, we need to convert nim strings to cstrings only
+# when we're ready to use them and only when we're sure the underlying nim string is
+# in scope, otherwise garbage collection madness happens
+proc mount*(source, target, fstype: string, mountflags: uint64, data: string): int = int(mount(cstring(source), cstring(target), cstring(fstype), culong(mountflags), cstring(data)))
+
+proc umount*(target: cstring): cint {.header: "sys/mount.h", importc.}
+proc umount2*(target: cstring, flags: cint): cint {.header: "sys/mount.h", importc.}
+# These 2 wrappers silent the CStringConv warning 
+# (implicit conversion to 'cstring' from a non-const location)
+proc umount*(target: string): int = int(umount(cstring(target)))
+proc umount2*(target: string, flags: int): int = int(umount2(cstring(target), cint(flags)))
+
+
+## Our Nim API
+type
+    Directory* = ref object
+        path: string
+        permissions: uint64
+    Symlink* = ref object
+        ## A symbolic link
+        source: string
+        dest: string
+    Filesystem* = ref object
+        ## A filesystem
+        ## (real or virtual)
+        source: string
+        target: string
+        fstype: string
+        mountflags: uint64
+        data: string
+        dump: uint8
+        pass: uint8
+
+
+proc newFilesystem*(source, target, fstype: string, mountflags: uint64 = 0, data: string = "", dump: uint8 = 0, pass: uint8 = 0): Filesystem =
+    ## Initializes a new filesystem object
+    result = Filesystem(source: source, target: target, fstype: fstype, mountflags: mountflags, data: data, dump: dump, pass: pass)
+
+
+proc newSymlink*(source, dest: string): Symlink =
+    ## Initializes a new symlink object
+    result = Symlink(source: source, dest: dest)
+
+
+proc newDirectory*(path: string, permissions: uint64): Directory =
+    ## Initializes a new directory object
+    result = Directory(path: path, permissions: permissions)
+
+
+# Stores VFS entries to be mounted upon boot (usually /proc, /sys, etc). You could
+# do this with a oneshot service, but it's a simple enough feature to have it built-in
+# into the init itself (especially since it makes error handling a heck of a lot easier)
+var virtualFileSystems: seq[Filesystem] = @[]
+# Since creating symlinks is a pretty typical operation for an init, NimD
+# provides a straightforward way to create them on boot without creating
+# full fledged oneshot services 
+var symlinks: seq[Symlink ] = @[]
+# Stores directories to be created on boot. Again, this is achievable trough oneshots,
+# but having a builtin API is a nice option IMHO
+var directories: seq[Directory] = @[]
+
+
+proc addVFS*(filesystem: FileSystem) =
+    ## Adds a virtual filesystem to be mounted upon boot
+    virtualFileSystems.add(filesystem)
+
+
+proc removeVFS*(filesystem: Filesystem) =
+    ## Removes a virtual filesystem. Note
+    ## this has no effect if executed after
+    ## the VFSs have been mounted (i.e. after
+    ## a call to mountVirtualDisks)
+    for i, f in virtualFileSystems:
+        if f == filesystem:
+            virtualFileSystems.del(i)
+
+
+iterator getAllVFSPaths: string =
+    ## Yields all of the mount points of
+    ## the currently registered virtual
+    ## filesystems
+    for vfs in virtualFileSystems:
+        yield vfs.target
+
+
+iterator getAllVFSNames: string =
+    ## This is similar to what
+    ## getAllVFSPaths does, except
+    ## it yields the VFS' source
+    ## instead of the mount point 
+    ## (which in this case is just
+    ## an alias, hence the "names" part)
+    for vfs in virtualFileSystems:
+        yield vfs.source
+
+
+proc addSymlink*(symlink: Symlink) =
+    ## Adds a symlink to be created
+    ## upon boot (check createSymlinks)
+    symlinks.add(symlink)
+
+
+proc removeSymlink*(symlink: Symlink) =
+    ## Removes a symlink. This has no
+    ## effect after createSymlinks has
+    ## been executed
+    for i, sym in symlinks:
+        if sym == symlink:
+            symlinks.del(i)
+
+
+proc addDirectory*(directory: Directory) =
+    ## Adds a directory to be created upon
+    ## boot (check createDirectories)
+    directories.add(directory)
+
+
+proc removeDirectory*(directory: Directory) =
+    ## Removes a directory. This has no
+    ## effect after createDirectories has
+    ## been executed
+    for i, dir in directories:
+        if dir == directory:
+            directories.del(i)
+
+
+proc parseFileSystemTable*(fstab: string): seq[Filesystem] =
+    ## Parses the contents of the given filesystem table and returns a Filesystem object.
+    ## An improperly formatted or semantically invalid fstab will cause this function to 
+    ## error out with a ValueError exception that should be caught by the caller.
+    ## No other checks other than very basic syntax are performed, as that job
+    ## is delegated to the operating system. Missing dump/pass entries are interpreted
+    ## as if they were set to 0, following the way Linux does it. Note that this function
+    ## automatically converts UUID/LABEL/PARTUUID/ID directives to their corresponding
+    ## /dev/disk/by-XXX/YYY symlink just like the mount command would do on a Linux system.
+    var temp: seq[string] = @[]
+    var dump: int
+    var pass: int
+    var line: string = ""
+    var s: seq[string] = @[]
+    for l in fstab.splitlines():
+        line = l.strip().replace("\t", " ")
+        if line.startswith("#") or line.isEmptyOrWhitespace():
+            continue
+        # This madness will make sure we only get (hopefully) 6 entries
+        # in our temporary list
+        temp = line.split().filterIt(it != "").join(" ").split(maxsplit=6)
+        if len(temp) < 6:
+            if len(temp) < 4:
+                # Not enough columns!
+                raise newException(ValueError, "improperly formatted filesystem table")
+            elif len(temp) == 4:
+                dump = 0
+                pass = 0
+            elif len(temp) == 5:
+                dump = 0
+        else:
+            try:
+                dump = parseInt(temp[4])
+            except ValueError:
+                raise newException(ValueError, &"improperly formatted filesystem table -> invalid value ({dump}) for dump")
+            try:
+                pass = parseInt(temp[5])
+            except ValueError:
+                raise newException(ValueError, &"improperly formatted filesystem table -> invalid value ({pass}) for pass")
+        if dump notin 0..1:
+            raise newException(ValueError, &"invalid value in filesystem table -> invalid value ({dump}) for dump")
+        if pass < 0:
+            raise newException(ValueError, &"invalid value in filesystem table -> invalid value ({pass}) for pass")
+        s = temp[0].split("=", maxsplit=2)
+        if temp[0].toLowerAscii().startswith("id="):
+            if len(s) < 2:
+                raise newException(ValueError, "improperly formatted filesystem table")
+            temp[0] = &"""/dev/disk/by-id/{s[1]}"""
+        if temp[0].toLowerAscii().startswith("label="):
+            if len(s) < 2:
+                raise newException(ValueError, "improperly formatted filesystem table")
+            temp[0] = &"""/dev/disk/by-label/{s[1]}"""
+        if temp[0].toLowerAscii().startswith("uuid="):
+            if len(s) < 2:
+                raise newException(ValueError, "improperly formatted filesystem table")
+            temp[0] = &"""/dev/disk/by-uuid/{s[1]}"""
+        if temp[0].toLowerAscii().startswith("partuuid="):
+            if len(s) < 2:
+                raise newException(ValueError, "improperly formatted filesystem table")
+            temp[0] = &"""/dev/disk/by-partuuid/{s[1]}"""
+        result.add(newFilesystem(source=temp[0], target=temp[1], fstype=temp[2], mountflags=0u64, data=temp[3], dump=uint8(dump), pass=uint8(pass)))
+
+
+proc checkDiskIsMounted(search: Filesystem, expand: bool = false): bool =
+    ## Returns true if a disk is already mounted. If expand is true,
+    ## symlinks are expanded and checked instead of doing a simple
+    ## string comparison of the source entry point. This should be
+    ## true when mounting real filesystems. Returns false if
+    ## /proc/mounts does not exist (usually happens when /proc has
+    ## not been mounted yet)
+    if not fileExists("/proc/mounts"):
+        return false
+    for entry in parseFileSystemTable(readFile("/proc/mounts")):
+        if expand:
+                if exists(entry.source) and exists(search.source) and sameFile(entry.source, search.source):
+                    return true
+        elif entry.source == search.source:
+            return true
+    return false
+
+
+proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
+    ## Mounts real disks from /etc/fstab
+    var retcode = 0
+    try:
+        logger.debug(&"Reading disk entries from {fstab}")
+        for entry in parseFileSystemTable(readFile(fstab)):
+            if checkDiskIsMounted(entry, expand=true):
+                logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.fstype}) at {entry.target}: already mounted")
+                continue
+            logger.debug(&"fsck returned status code {retcode}")
+            logger.debug(&"Mounting filesystem {entry.source} ({entry.fstype}) at {entry.target} with mount option(s) {entry.data}")
+            logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}')")
+            retcode = mount(entry.source, entry.target, entry.fstype, entry.mountflags, entry.data)
+            logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
+            if retcode == -1:
+                logger.error(&"Mounting {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
+                # Resets the error code
+                posix.errno = cint(0)
+            else:
+                logger.debug(&"Mounted {entry.source} at {entry.target}")
+    except ValueError:  # Check parseFileSystemTable for more info on this catch block
+        logger.fatal("Improperly formatted fstab, exiting")
+        nimDExit(logger, 131)
+
+
+proc mountVirtualDisks*(logger: Logger) =
+    ## Mounts POSIX virtual filesystems/partitions,
+    ## such as /proc and /sys
+    var retcode = 0
+    for entry in virtualFileSystems:
+        if checkDiskIsMounted(entry):
+            logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.fstype}) at {entry.target}: already mounted")
+            continue
+        logger.debug(&"Mounting filesystem {entry.source} ({entry.fstype}) at {entry.target} with mount option(s) {entry.data}")
+        logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}')")
+        retcode = mount(entry.source, entry.target, entry.fstype, entry.mountflags, entry.data)
+        logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
+        if retcode == -1:
+            logger.error(&"Mounting disk {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
+            # Resets the error code
+            posix.errno = cint(0)
+            logger.fatal("Failed mounting vital system disk partition, system is likely corrupted, booting cannot continue")
+            nimDExit(logger, 131) # ENOTRECOVERABLE - State not recoverable
+        else:
+            logger.debug(&"Mounted {entry.source} at {entry.target}")
+
+
+proc unmountAllDisks*(logger: Logger, code: int) =
+    ## Unmounts all currently mounted disks, including the ones that
+    ## were not mounted trough fstab but excluding virtual filesystems
+    var isVFS: bool = false
+    var retcode = 0
+    try:
+        logger.info("Detaching real filesystems")
+        logger.debug(&"Reading disk entries from /proc/mounts")
+        for entry in parseFileSystemTable(readFile("/proc/mounts")):
+            # We don't detach the virtual filesystems because they are a software-level abstraction
+            # that exists purely in memory, and unmounting them while keeping the system stable during 
+            # shutdown is a headache I don't wanna deal with.
+            # All of these checks seem excessive, but they make absolutely sure we don't unmount them,
+            # as they are critical system components (especially /proc): maybe we should use stat()
+            # instead and make a generic check, but adding a system call into the mix seems overkill given
+            # we alredy have all the info we need
+            if entry in virtualFileSystems:
+                continue
+            for source in getAllVFSNames():
+                if entry.source == source:
+                    isVFS = true
+                    break
+            for path in getAllVFSPaths():
+                if entry.target.startswith(path):
+                    isVFS = true
+                    break
+            if isVFS:
+                isVFS = false
+                logger.trace(&"Skipping unmounting filesystem {entry.source} ({entry.fstype}) from {entry.target} as it is a virtual filesystem")
+                continue
+            if not checkDiskIsMounted(entry):
+                logger.trace(&"Skipping unmounting filesystem {entry.source} ({entry.fstype}) from {entry.target}: not mounted")
+                continue
+            logger.debug(&"Unmounting filesystem {entry.source} ({entry.fstype}) from {entry.target}")
+            logger.trace(&"Calling umount2('{entry.source}', MNT_DETACH)")
+            retcode = umount2(entry.source, 2)   # 2 = MNT_DETACH - Since we're shutting down, we need the disks to be *gone*!
+            logger.trace(&"umount2('{entry.source}', MNT_DETACH) returned {retcode}")
+            if retcode == -1:
+                logger.error(&"Unmounting disk {entry.source} from {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
+                # Resets the error code
+                posix.errno = cint(0)
+            else:
+                logger.debug(&"Unmounted {entry.source} from {entry.target}")
+    except ValueError:  # Check parseFileSystemTable for more info on this catch block
+        logger.fatal(&"A fatal error occurred while unmounting disks: {getCurrentExceptionMsg()}")
+        nimDExit(logger, 131)
+
+
+proc createSymlinks*(logger: Logger) =
+    ## Creates a set of symlinks needed
+    ## by stuff like Linux ports of BSD
+    ## software. Non-existing directories
+    ## are created until the path to the
+    ## symlink is valid. Already existing
+    ## sources and non-existent destinations
+    ## cause the symlink creation to be skipped
+    for sym in symlinks:
+        try:
+            if not exists(sym.source):
+                logger.warning(&"Skipping creation of symbolic link from {sym.dest} to {sym.source}: destination does not exist")
+                continue
+            elif exists(sym.dest):
+                if symlinkExists(sym.dest) and sameFile(expandSymlink(sym.dest), sym.source):
+                    logger.debug(&"Skipping creation of symbolic link from {sym.dest} to {sym.source}: link already exists")
+                elif symlinkExists(sym.dest) and not sameFile(expandSymlink(sym.dest), sym.source):
+                    logger.warning(&"Attempted to create symbolic link from {sym.dest} to {sym.source}, but link already exists and points to {expandSymlink(sym.dest)}")
+                else:
+                    logger.warning(&"Attempted to create symbolic link from {sym.dest} to {sym.source}, but destination already exists and is not a symlink")
+                continue
+            logger.debug(&"Creating symbolic link from {sym.dest} to {sym.source}")
+            createDir(sym.dest.splitPath().head)
+            createSymlink(sym.source, sym.dest)
+        except:
+            logger.warning(&"Failed to create symbolic link from {sym.dest} to {sym.source}: {getCurrentExceptionMsg()}")
+
+
+proc createDirectories*(logger: Logger) =
+    ## Creates standard directories that
+    ## Linux software expects to be present.
