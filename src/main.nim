@@ -99,7 +99,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     var sigset: Sigset
     # TODO
     logger.info("Processing boot runlevel")
-    addService(newService(name="echoer", description="prints owo", exec="/bin/echo owo",
+    addService(newService(name="echoer", description="prints hello world", exec="/bin/echo hello world",
                           runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
                           supervised=false, restartOnFailure=false, restartDelay=0))
     addService(newService(name="sleeper", description="la mamma di licenziato", 
