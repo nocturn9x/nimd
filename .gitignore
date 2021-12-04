@@ -2,3 +2,7 @@ nimcache/
 nimblecache/
 htmldocs/
 main
+*.iso
+nimd
+main
+
