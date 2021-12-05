@@ -5,4 +5,8 @@ main
 *.iso
 nimd
 main
+boot.sh
+rootfs
+packervm
+test
 
