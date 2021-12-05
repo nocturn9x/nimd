@@ -107,22 +107,6 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
                          exec="/bin/false", supervised=true, restartOnFailure=true,
                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
     startServices(logger, workers=2, level=Boot)
-    logger.debug("Setting up real signal handlers")
-    onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
-            SIGTRAP, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGTERM):  # 6 is SIGIOT
-        # Can't capture local variables because this implicitly generates
-        # a noconv procedure, so we use getDefaultLogger() instead. Must find
-        # a better solution long-term because we need the configuration from
-        # our own logger object (otherwise we'd always create a new one and
-        # never switch our logs to file once booting is completed)
-        getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
-    onSignal(SIGCHLD):
-        # One of the key features of an init system is reaping child
-        # processes!
-        reapProcess(getDefaultLogger())
-    onSignal(SIGINT):
-        # Temporary
-        nimDExit(getDefaultLogger(), 131, emerg=true)
     logger.debug("Starting main loop")
     mainLoop(logger)
 
