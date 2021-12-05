@@ -112,6 +112,7 @@ proc supervisorWorker(logger: Logger, service: Service, pid: int) =
     var returnCode: int
     var sig: int
     var process: Process
+    logger.switchToFile()
     while true:
         returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
         if WIFEXITED(status):
@@ -190,8 +191,8 @@ proc startService(logger: Logger, service: Service) =
 proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
     ## Starts the registered services in the 
     ## given runlevel
-    if workers > cpuinfo.countProcessors() - 1:
-        logger.warning(&"The configured number of workers ({workers}) is greater than the recommended one ({cpuinfo.countProcessors() - 1}), performance may degrade")
+    if workers > cpuinfo.countProcessors():
+        logger.warning(&"The configured number of workers ({workers}) is greater than the recommended one ({cpuinfo.countProcessors()}), performance may degrade")
     var workerCount: int = 0
     var status: cint
     var pid: int = posix.fork()

@@ -14,3 +14,4 @@ initrd*
 vmlinuz-linux
 vmlinuz*
 debian*
+start.sh

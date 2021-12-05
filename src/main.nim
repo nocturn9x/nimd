@@ -38,13 +38,15 @@ proc addStuff =
     addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
     addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Shuld say destination does not exist
     addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
-    # Adds virtual filesystems
+    # Adds virtual filesystems (Update: apparently the kernel already mounts this stuff!)
+    #[
     addVFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
     addVFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
     addVFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
     addVFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
     addVFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
     addVFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
+    ]#
     addDirectory(newDirectory("test", 777))           # Should create a directory
     addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
     addDirectory(newDirectory("/dev/test/owo", 000))  # Should say path does not exist
@@ -60,9 +62,11 @@ proc addStuff =
     addService(newService(name="exiter", description="la mamma di licenziat", 
                           exec="/bin/true", supervised=true, restart=Always,
                           restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
+    #[
     addService(newService(name="sleeper", description="la mamma di danieloz", 
                           exec="/usr/bin/sleep", supervised=true, restart=Always,
                           restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
+    ]#
 
 
 proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
@@ -94,9 +98,6 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
         # One of the key features of an init system is reaping child
         # processes!
         reapProcess(getDefaultLogger())
-    onSignal(SIGINT):
-        # Temporary
-        nimDExit(getDefaultLogger(), 131, emerg=true)
     addStuff()
     try:
         if mountDisks:

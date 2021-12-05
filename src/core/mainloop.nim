@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import strformat
-
+import os
 
 
 import ../util/[logging, misc]
@@ -27,11 +27,13 @@ proc mainLoop*(logger: Logger) =
     logger.debug(&"Unblocking signals")
     unblockSignals(logger)
     logger.info("System initialization complete, going idle")
-    while true:
-        try:
-            logger.info(&"Working...")
+    logger.switchToFile()
+    try:
+        discard execShellCmd("/bin/login -f root")  # TODO: Use a service
+        while true:
             sleepSeconds(30)
-        except:
-            logger.critical(&"A critical error has occurred while running, restarting the mainloop! Error -> {getCurrentExceptionMsg()}")
-            # We *absolutely* cannot die
-            mainLoop(logger)
+    except:
+        logger.critical(&"A critical error has occurred while running, restarting the mainloop in 30 seconds! Error -> {getCurrentExceptionMsg()}")
+        sleepSeconds(30)
+        # We *absolutely* cannot die
+        mainLoop(logger)
