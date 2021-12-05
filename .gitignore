@@ -9,4 +9,5 @@ boot.sh
 rootfs
 packervm
 test
-
+initramfs-linux.img
+vmlinuz-linux
