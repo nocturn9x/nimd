@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import osproc
 import posix
 import glob
 import strutils
@@ -20,6 +21,7 @@ import times
 
 
 import ../util/logging
+import services
 
 
 type ShutdownHandler* = ref object
@@ -79,17 +81,15 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     ## as cleanly as possible. When emerg equals true, it will
     ## try to spawn a root shell and exit
     if emerg:
-        var status: cint
         # We're in emergency mode: do not crash the kernel, spawn a shell and exit
         logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
         logger.info("Terminating child processes with SIGKILL")
-        discard posix.kill(SIGKILL, -1)
-        discard posix.waitPid(-1, status, 0)
-        discard execShellCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
+        discard execCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
+        discard posix.kill(-1, SIGKILL)
         quit(-1)
     logger.warning("The system is shutting down")
     logger.info("Processing shutdown runlevel")
-    # TODO
+    startServices(logger, Shutdown)
     logger.info("Running shutdown handlers")
     try:
         for handler in shutdownHandlers:
@@ -99,13 +99,13 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
         # Note: continues calling handlers!
     logger.info("Terminating child processes with SIGTERM")
     logger.debug(&"Waiting up to {sigTermDelay} seconds for the kernel to deliver signals")
-    discard posix.kill(SIGTERM, -1)  # The kernel handles this for us asynchronously
+    discard posix.kill(-1, SIGTERM)  # The kernel handles this for us asynchronously
     var t = cpuTime()
     # We wait some time for the signals to propagate
     while anyUserlandProcessLeft() or cpuTime() - t >= sigTermDelay:
         sleep(int(0.25 * 1000))
     if anyUserlandProcessLeft():
         logger.info("Terminating child processes with SIGKILL")
-        discard posix.kill(SIGKILL, -1)
+        discard posix.kill(-1, SIGKILL)
     logger.warning("Shutdown procedure complete, sending final termination signal")
     quit(code)

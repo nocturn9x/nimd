@@ -11,3 +11,4 @@ packervm
 test
 initramfs-linux.img
 vmlinuz-linux
+debian*

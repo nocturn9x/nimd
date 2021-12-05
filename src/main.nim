@@ -21,6 +21,50 @@ import util/[logging, constants, misc]
 import core/[mainloop, fs, shutdown, services]
 
 
+proc addStuff = 
+    ## Adds stuff to test NimD. This is
+    ## a temporary procedure
+    
+    # Adds symlinks
+    addSymlink(newSymlink(dest="/dev/fd", source="/proc/self/fd"))
+    addSymlink(newSymlink(dest="/dev/fd/0", source="/proc/self/fd/0"))
+    addSymlink(newSymlink(dest="/dev/fd/1", source="/proc/self/fd/1"))
+    addSymlink(newSymlink(dest="/dev/fd/2", source="/proc/self/fd/2"))
+    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))
+    addSymlink(newSymlink(dest="/dev/std/out", source="/proc/self/fd/1"))
+    addSymlink(newSymlink(dest="/dev/std/err", source="/proc/self/fd/2"))
+    # Tests here. Check logging output (debug) to see if
+    # they work as intended
+    addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
+    addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Shuld say destination does not exist
+    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
+    # Adds virtual filesystems
+    addVFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
+    addVFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
+    addDirectory(newDirectory("test", 777))           # Should create a directory
+    addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
+    addDirectory(newDirectory("/dev/test/owo", 000))  # Should say path does not exist
+    # Shutdown handler to unmount disks
+    addShutdownHandler(newShutdownHandler(unmountAllDisks))
+    # Adds test services
+    addService(newService(name="echoer", description="prints owo", exec="/bin/echo owo",
+                          runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
+                          supervised=false, restart=Never, restartDelay=0))
+    addService(newService(name="errorer", description="la mamma di gavd", 
+                         exec="/bin/false", supervised=true, restart=OnFailure,
+                         restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
+    addService(newService(name="exiter", description="la mamma di licenziat", 
+                          exec="/bin/true", supervised=true, restart=Always,
+                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
+    addService(newService(name="sleeper", description="la mamma di danieloz", 
+                          exec="/usr/bin/sleep", supervised=true, restart=Always,
+                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
+
+
 proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
     ## NimD's entry point and setup
     ## function
@@ -53,26 +97,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     onSignal(SIGINT):
         # Temporary
         nimDExit(getDefaultLogger(), 131, emerg=true)
-    addSymlink(newSymlink(dest="/dev/fd", source="/proc/self/fd"))
-    addSymlink(newSymlink(dest="/dev/fd/0", source="/proc/self/fd/0"))
-    addSymlink(newSymlink(dest="/dev/fd/1", source="/proc/self/fd/1"))
-    addSymlink(newSymlink(dest="/dev/fd/2", source="/proc/self/fd/2"))
-    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))
-    addSymlink(newSymlink(dest="/dev/std/out", source="/proc/self/fd/1"))
-    addSymlink(newSymlink(dest="/dev/std/err", source="/proc/self/fd/2"))
-    # Tests here. Check logging output (debug) to see if
-    # they work as intended
-    addSymlink(newSymlink(dest="/dev/std/err", source="/"))  # Should say link already exists and points to /proc/self/fd/2
-    addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Shuld say destination does not exist
-    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
-    # Adds virtual filesystems
-    addVFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
-    addShutdownHandler(newShutdownHandler(unmountAllDisks))
+    addStuff()
     try:
         if mountDisks:
             logger.info("Mounting filesystem")
@@ -82,31 +107,22 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
             mountRealDisks(logger, fstab)
         else:
             logger.info("Skipping disk mounting, assuming this has already been done")
+        logger.info("Creating symlinks")
+        createSymlinks(logger)
+        logger.info("Creating directories")
+        createDirectories(logger)
+        logger.info("Filesystem preparation complete")
+        logger.debug("Calling sync() just in case")
+        doSync(logger)
     except:
         logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131, emerg=false)
-    logger.info("Disks mounted")
-    logger.debug("Calling sync() just in case")
-    doSync(logger)
     logger.info("Setting hostname")
     logger.debug(&"Hostname was set to '{setHostname(logger)}'")
-    logger.info("Creating symlinks")
-    createSymlinks(logger)
-    logger.info("Creating directories")
-    createDirectories(logger)
     logger.debug("Entering critical fork() section: blocking signals")
-    blockSignals(logger)
+    blockSignals(logger)   # They are later unblocked in mainLoop
     logger.info("Processing boot runlevel")
-    addService(newService(name="echoer", description="prints owo", exec="/bin/echo owo",
-                          runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
-                          supervised=false, restartOnFailure=false, restartDelay=0))
-    addService(newService(name="sleeper", description="la mamma di licenziato", 
-                         exec="/usr/bin/sleep 10", supervised=true, restartOnFailure=true,
-                         restartDelay=5, runlevel=Boot, workDir="/home", kind=Simple))
-    addService(newService(name="errorer", description="la mamma di gavd", 
-                         exec="/bin/false", supervised=true, restartOnFailure=true,
-                         restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
-    startServices(logger, workers=2, level=Boot)
+    startServices(logger, workers=1, level=Boot)
     logger.debug("Starting main loop")
     mainLoop(logger)
 
@@ -117,7 +133,8 @@ when isMainModule:
     for kind, key, value in optParser.getopt():
         case kind:
             of cmdArgument:
-                discard
+                echo "Error: unexpected argument"
+                quit(EINVAL)
             of cmdLongOption:
                 case key:
                     of "help":
@@ -131,7 +148,7 @@ when isMainModule:
                     of "extra":
                         logger.setLevel(LogLevel.Trace)
                     else:
-                        logger.error(&"Unkown command-line long option '{key}'")
+                        echo &"Unkown command-line long option '{key}'"
                         quit(EINVAL)  # EINVAL - Invalid argument
             of cmdShortOption:
                 case key:
@@ -146,7 +163,9 @@ when isMainModule:
                     of "X":
                         logger.setLevel(LogLevel.Trace)
                     else:
-                        logger.error(&"Unkown command-line short option '{key}'")
+                        echo &"Unkown command-line short option '{key}'"
+                        echo "Usage: nimd [options]"
+                        echo "Try nimd --help for more info"
                         quit(EINVAL) # EINVAL - Invalid argument
             else:
                 echo "Usage: nimd [options]"

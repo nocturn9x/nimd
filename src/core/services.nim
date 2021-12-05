@@ -17,10 +17,13 @@ import tables
 import osproc
 import posix
 import shlex
+import os
+
+
+proc strsignal(sig: cint): cstring {.header: "string.h", importc.}
 
 
 import ../util/logging
-import ../util/misc
 
 
 type
@@ -31,6 +34,9 @@ type
         ## Enumerates all service
         ## types
         Oneshot, Simple
+    RestartKind* = enum
+        ## Enum of possible restart modes
+        Always, OnFailure, Never
     Service* = ref object of RootObj
         ## A service object
         name: string
@@ -40,14 +46,14 @@ type
         runlevel: RunLevel
         exec: string
         supervised: bool
-        restartOnFailure: bool
+        restart: RestartKind
         restartDelay: int
 
 
-proc newService*(name, description: string, kind: ServiceKind, workDir: string, runlevel: RunLevel, exec: string, supervised, restartOnFailure: bool, restartDelay: int): Service =
+proc newService*(name, description: string, kind: ServiceKind, workDir: string, runlevel: RunLevel, exec: string, supervised: bool, restart: RestartKind, restartDelay: int): Service =
     ## Creates a new service object
     result = Service(name: name, description: description, kind: kind, workDir: workDir, runLevel: runLevel,
-                     exec: exec, supervised: supervised, restartOnFailure: restartOnFailure, restartDelay: restartDelay)
+                     exec: exec, supervised: supervised, restart: restart, restartDelay: restartDelay)
 
 
 var services: seq[Service] = @[]
@@ -114,25 +120,42 @@ proc supervisorWorker(logger: Logger, service: Service, pid: int) =
             sig = WTERMSIG(status)
         else:
             sig = -1
-        if sig > 0 and service.restartOnFailure:
-            logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
-            removeManagedProcess(pid)
-            sleepSeconds(service.restartDelay)
-            var split = shlex(service.exec)
-            if split.error:
-                logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+        case service.restart:
+            of Never:
+                logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
                 break
-            var arguments = split.words
-            let progName = arguments[0]
-            arguments = arguments[1..^1]
-            process = startProcess(progName, workingDir=service.workDir, args=arguments)
-            pid = process.processID()
-        elif sig > 0:
-            logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), shutting down controlling process")
-            break
-        else:
-            logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
-            break
+            of Always:
+                if sig > 0:
+                    logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+                elif sig == 0:
+                    logger.info(&"Service '{service.name}' has exited gracefully, sleeping {service.restartDelay} seconds before restarting it")
+                else:
+                    logger.info(&"Service '{service.name}' has exited, sleeping {service.restartDelay} seconds before restarting it")
+                removeManagedProcess(pid)
+                sleep(service.restartDelay * 1000)
+                var split = shlex(service.exec)
+                if split.error:
+                    logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+                    break
+                var arguments = split.words
+                let progName = arguments[0]
+                arguments = arguments[1..^1]
+                process = startProcess(progName, workingDir=service.workDir, args=arguments)
+                pid = process.processID()
+            of OnFailure:
+                if sig > 0:
+                    logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+                removeManagedProcess(pid)
+                sleep(service.restartDelay * 1000)
+                var split = shlex(service.exec)
+                if split.error:
+                    logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+                    break
+                var arguments = split.words
+                let progName = arguments[0]
+                arguments = arguments[1..^1]
+                process = startProcess(progName, workingDir=service.workDir, args=arguments)
+                pid = process.processID()
     if process != nil:
         process.close()
 
@@ -140,7 +163,8 @@ proc supervisorWorker(logger: Logger, service: Service, pid: int) =
 proc startService(logger: Logger, service: Service) =
     ## Starts a single service (this is called by
     ## startServices below until all services have
-    ## been started)
+    ## been started). This function is supposed to 
+    ## be called from a forked process!
     var process: Process
     try:
         var split = shlex(service.exec)
@@ -152,7 +176,9 @@ proc startService(logger: Logger, service: Service) =
         arguments = arguments[1..^1]
         process = startProcess(progName, workingDir=service.workDir, args=arguments)
         if service.supervised:
-            supervisorWorker(logger, service, process.processID)
+            var pid = posix.fork()
+            if pid == 0:
+                supervisorWorker(logger, service, process.processID)
         # If the service is unsupervised we just exit
     except:
         logger.error(&"Error while starting service {service.name}: {getCurrentExceptionMsg()}")

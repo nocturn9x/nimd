@@ -75,7 +75,7 @@ proc getDefaultLogger*(): Logger =
     ## standard error with some basic info like the
     ## current date and time and the log level
         
-    setStdIoUnbuffered()   # Just in case
+    setStdIoUnbuffered()   # Doesn't work otherwise!
 
     proc logTrace(self: LogHandler, logger: Logger, message: string) =
         setForegroundColor(fgMagenta)

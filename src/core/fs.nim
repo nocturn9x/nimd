@@ -350,9 +350,44 @@ proc createSymlinks*(logger: Logger) =
             createDir(sym.dest.splitPath().head)
             createSymlink(sym.source, sym.dest)
         except:
-            logger.warning(&"Failed to create symbolic link from {sym.dest} to {sym.source}: {getCurrentExceptionMsg()}")
+            logger.error(&"Failed to create symbolic link from {sym.dest} to {sym.source}: {getCurrentExceptionMsg()}")
 
 
 proc createDirectories*(logger: Logger) =
     ## Creates standard directories that
     ## Linux software expects to be present.
+    ## Note that this has to run after the
+    ## filesystem has been initialized.
+    ## If a chmod binary is found, it is used
+    ## to set directory permissions as specified
+    ## in their config. Note that the entire path
+    ## of the directory is created if it does not 
+    ## exist yet
+    var hasChmod = false
+    try:
+        if findExe("chmod").isEmptyOrWhitespace():
+            logger.warning("Could not find chmod binary, directory permissions will default to OS configuration")
+            hasChmod = true
+    except:
+      logger.error(&"Failed to search for chmod binary: {getCurrentExceptionMsg()}")  
+    for dir in directories:
+        try:
+            if exists(dir.path):
+                if dirExists(dir.path):
+                    logger.warning(&"Creation of directory {dir.path} skipped: directory already exists")
+                elif fileExists(dir.path):
+                    logger.warning(&"Creation of directory {dir.path} skipped: path is a file")
+                elif symlinkExists(dir.path):
+                    logger.warning(&"Creation of directory {dir.path} skipped: path is a symlink to {expandSymlink(dir.path)}")
+                else:
+                    # Catch-all
+                    logger.warning(&"Creation of directory {dir.path} skipped: destination already exists")
+            else:
+                createDir(dir.path)
+                logger.debug(&"Created new directory at {dir.path}")
+                if hasChmod:
+                    logger.debug(&"Setting permissions to {dir.permissions} for {dir.path}")
+                    if (let code = execShellCmd(&"chmod -R {dir.permissions} {dir.path}"); code) != 0:
+                        logger.warning(&"Command 'chmod -R {dir.permissions}' exited non-zero status code {code}")
+        except:
+            logger.error(&"Failed to create directory at {dir.path}: {getCurrentExceptionMsg()}")
