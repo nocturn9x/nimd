@@ -15,3 +15,5 @@ vmlinuz-linux
 vmlinuz*
 debian*
 start.sh
+rebuild.sh
+
