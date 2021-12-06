@@ -12,39 +12,94 @@ long time. Sometimes programming only large scale software is boring, go figure.
 
 ## Disclaimers & Functionality
 
-This software is developed on a _"It works on my machine"_ basis. I don't perform any extensive testing: if this thing unmounts your
-root partition while you're saving your precious family photos, I can't do much. I run an installation of Artix Linux (x86_64)
-using the 5.15.5-artix1-1 linux kernel.
+This software is developed on a _"It works on my (virtual) machine"_ basis. I don't perform any extensive testing: if this thing unmounts your
+root partition while you're saving your precious family photos, I can't do much (although it probably won't). I currently test NimD inside a
+minimal Alpine VM that runs the 5.10.0-9-amd64 version of the Linux kernel.
 
-Also, NimD is developed **for Linux only**, as that's the kernel my OS uses: other kernels are not supported at all and NimD
-**will** explode with fancy fireworks if you try to run it unmodified on other kernels (although probably things like BSD and Solaris
-are not that hard to add support for using some `when defined()` clauses and changing what virtual filesystems NimD expects to mount).
+NimD is developed **for Linux only**, as that's the kernel my OS uses: other kernels are not supported at all and NimD **will** explode with fancy
+fireworks if you try to run it unmodified on other kernels (although probably things like BSD and Solaris are not that hard to add support for).
 
-NimD is not particularly secure. Actually it's probably very insecure by modern standards, but basic checks like making sure regular users
-can't reboot the machine are (_actually_, will be) at least in place, so there's that I guess.
+NimD is not particularly secure (although basic checks like making sure regular users can't reboot the machine are in place), but it doesn't need to be: the only thing it does is run the services you provide to it, that's it*. No `nimd-modulenamed` madness, no `libnimd.so` libraries to link against, NimD only runs your services: if it blows up, it's your fault (or it's a bug).
 
-NimD assumes that the standard file descriptors 0, 1 and 2 (stdin, stdout and stderr respectively) are properly connected to /dev/console 
-(which is something all modern versions of the Linux kernel do). I tried connecting them manually, but I was out of luck: if you happen to 
-know how to check for a proper set of file descriptors and connect them manually, please make a PR, I'd love to hear how to do that.
+NimD expects the 3 [standard streams](https://en.wikipedia.org/wiki/Standard_streams) to be properly connected to `/dev/console` (which is something all modern versions of the Linux kernel do). I tried connecting them manually, but I was out of luck: if you happen to  know how to check for (or open) them and connect them manually, please make a PR, I'd love to hear how to do that.
 
-When mounting the filesystem, NimD is at least somewhat smart:
-- First, it'll try to mount the standard POSIX virtual filesystems (/proc, /sys, etc) if they're not mounted already (you specify which)
-- Then, it'll parse /etc/fstab and mount all the disks from there as well (unless they are already mounted, of course).
-    Drive IDs/UUIDs, LABELs and PARTUUIDs are also supported and are automatically resolved to their respective /dev/disk/by-XXX symlink
+_*_: Well, almost. If you don't wanna write oneshot services for simple things like creating symlinks/directories (especially if you plan running BSD ports of
+some program on Linux) and mounting your drives then NimD can do it for you, but just because it _can_ doesn't mean it _has to_: you choose! NimD has a builtin
+fstab parser and can operate entirely independently of the `mount` command, since it directly hooks up to `mount`, `umount` and `umount2` inside `sys/mount.h`
 
-__Note__: To check if a disk is mounted, NimD reads /proc/mounts. If said virtual file is absent (say because we just booted and haven't mounted
-/proc yet), the disk is assumed to be unmounted and is then mounted. This seems fairly reasonable to me, but in the off chance that said disk is
-indeed mounted and NimD doesn't know it, it'll just log the error about the disk being already mounted and happily continue its merry way into
-booting your system (_hopefully_), but failing to mount any of the POSIX virtual filesystems will cause NimD to abort with error code 131 (which
-in turn will most likely cause your kernel to panic) because it's almost sure that the system would be in a broken state anyway.
+## Setup
 
-The way I envision NimD being installed on a system is the following:
-- /etc/nimd -> Contains configuration files
-    - /etc/nimd/runlevels -> Contains the runlevels (think openrc)
-- /var/run/nimd.sock -> Unix domain socket for IPC
-- /etc/runlevels -> Symlink to /etc/nimd/runlevels
-- /sbin/nimd -> Actual NimD executable
-- /sbin/init -> Symlink to /sbin/nimd
+NimD expects to be installed like so:
+- `/etc/nimd` -> Contains configuration files and utilities like `reboot` and `poweroff`
+    - `/etc/nimd/runlevels` -> Contains the runlevels (`boot`, `default`, `shutdown`)
+    - `/etc/nimd/nimd.conf` -> NimD's own configuration file
+- `/var/run/nimd.sock` -> Unix domain socket for IPC
+- `/etc/runlevels` -> Symlink to `/etc/nimd/runlevels`
+- `/sbin/nimd` -> Actual NimD executable
+- `/sbin/init` -> Symlink to `/sbin/nimd`
+- `/bin/{poweroff,shutdown,reboot,halt}`  -> Minimal utilities that communicate with NimD to poweroff/shutdown/reboot/halt the machine
+- `/bin/nimdctl` -> Utility to interact with NimD (add/remove/start/stop services, read logs, inspect services' status, etc)
 
 
+__Note__: The runlevels directory contains `*.conf` files (or they can also be symlinks, NimD doesn't care): those are NimD's own unit files.
 
+
+## Unit files
+
+Services in NimD are called _unit files_ or just _units_ (I know, __very__ original). They are configuration files that tell NimD what to do once
+it has booted your system
+
+### Dependency management
+
+Unlike some other init systems (most notably, runit) NimD is _dependency based_: to understand this relatively simple concept disguised as a fancy term,
+you have to understand NimD (like many others) relies on the concepts of _dependents_ (units that _depend_ on some others to work) and _providers_ (units 
+that _provide_ services to their dependents and that may in turn have dependencies themselves). For example, if you wanna start an SSH server, you probably
+want to make sure your disks are mounted and that your network has been set up. To do that, you can write something like this:
+
+```
+[Service]
+
+name         = ssh                    # The name of the service
+description  = Secure Shell Server    # A short description
+type         = simple                 # Other option: oneshot (i.e. runs only once, implies supervised=false)
+exec         = /usr/bin/sshd <args>   # Note: this is not passed trough the shell, it's executed directly
+depends      = net,fs                 # This service will be started only when these dependencies are satisfied
+provides     = ssh                    # Dependents can also be providers
+restart      = always                 # Other options are: never, onFailure
+restartDelay = 10                     # NimD will wait this many seconds before trying to start it again
+supervised   = true                   # This is the default. Disable it if you don't need NimD to watch for it
+
+[Logging]
+
+stderr = /var/log/sshd     # Path of the stderr log for the service
+stdout = /var/log/sshd     # Path of the stdout log for the service
+stdin  = /dev/null         # Path of the stdin fd for the service
+```
+
+A dependency name can either be the name of a unit file (without the `.conf` extension), or one of the following placeholders:
+- `net` -> Stands for network connection. Services like NetworkManager and dhcpcd should be set as providers for this
+- `fs`  -> If you mount your disks using a oneshot service (recommended for the best experience), your service should provide this
+
+
+## Configuring NimD
+
+NimD's own configuration file is located at `/etc/nimd/nimd.conf` and its syntax is similar to those of unit files (i.e. uses an
+INI-like structure), but the options are obviously different. An example config would look something like this:
+
+```
+[Logging]
+
+level   = info            # Levels are: trace, debug, info, warning, error, critical, fatal
+logFile = /var/log/nimd   # Path to log file
+
+[Filesystem]
+
+autoMount      = true                               # Automatically parses /etc/fstab and mounts disks
+fstabPath      = /etc/fstab                         # Path to your system's fstab (defaults to /etc/fstab)
+createDirs     = /path/to/dir1, /path/to/dir2       # Creates these directories on boot. Empty to disable
+createSymlinks = /path/to/dir1, /path/to/dir2       # Creates these symlinks on boot. Empty to disable
+
+[Misc]
+
+controlSocket = /var/run/nimd.sock    # Path to the Unix domain socket to create for IPC
+```

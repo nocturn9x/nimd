@@ -49,16 +49,57 @@ type
         supervised: bool
         restart: RestartKind
         restartDelay: int
+        depends*: seq[Service]
+        provides*: seq[Service]
 
 
-proc newService*(name, description: string, kind: ServiceKind, workDir: string, runlevel: RunLevel, exec: string, supervised: bool, restart: RestartKind, restartDelay: int): Service =
+proc newService*(name, description: string, kind: ServiceKind, workDir: string, runlevel: RunLevel, exec: string, supervised: bool, restart: RestartKind,
+                 restartDelay: int, depends, provides: seq[Service]): Service =
     ## Creates a new service object
     result = Service(name: name, description: description, kind: kind, workDir: workDir, runLevel: runLevel,
-                     exec: exec, supervised: supervised, restart: restart, restartDelay: restartDelay)
+                     exec: exec, supervised: supervised, restart: restart, restartDelay: restartDelay, 
+                     depends: depends, provides: provides)
+    result.provides.add(result)
+
+
+proc extend[T](self: var seq[T], other: seq[T]) =
+    ## Extends self with the elements of other
+    for el in other:
+        self.add(el)
 
 
 var services: seq[Service] = @[]
 var processIDs: TableRef[int, Service] = newTable[int, Service]()
+
+
+proc resolveDependencies(logger: Logger, node: Service, resolved, unresolved: var seq[Service]) =
+    ## Resolves dependencies and modifies the resolved
+    ## parameter in place to a list that satisfies the
+    ## dependency tree. This is basically traversing
+    ## a directed cyclic graph, although note that cycles
+    ## in our graph are errors and cause the dependants and
+    ## the providers to be skipped and an error to be logged
+
+    # Note: It turns out this is an NP-hard problem (see https://stackoverflow.com/a/28102139/12159081),
+    # so hopefully this doesn't blow up. No wonder runit doesn't do any dependency resolution, lol.
+    # The algorithm comes from https://www.electricmonk.nl/log/2008/08/07/dependency-resolving-algorithm/
+    # and has been extended to support the dependent-provider paradigm
+    var ok = true
+    unresolved.add(node)
+    for dependency in node.depends:
+        if dependency notin resolved:
+            if dependency in unresolved:
+                logger.error(&"Could not resolve dependencies for '{node.name}' -> '{dependency.name}': cyclic dependency detected")
+                ok = false
+                continue
+            resolveDependencies(logger, dependency, resolved, unresolved)
+    for dependency in node.provides:
+        if dependency == node:
+            continue
+        resolveDependencies(logger, dependency, resolved, unresolved)
+    if ok:
+        resolved.add(node)
+        unresolved.del(unresolved.find(node))
 
 
 proc isManagedProcess*(pid: int): bool = 
@@ -182,7 +223,7 @@ proc startService(logger: Logger, service: Service) =
         let progName = arguments[0]
         arguments = arguments[1..^1]
         process = startProcess(progName, workingDir=service.workDir, args=arguments)
-        if service.supervised:
+        if service.supervised and service.kind != Oneshot:
             var pid = posix.fork()
             if pid == 0:
                 logger.trace(&"New child has been spawned")
@@ -198,6 +239,9 @@ proc startService(logger: Logger, service: Service) =
 proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
     ## Starts the registered services in the 
     ## given runlevel
+    var resolved: seq[Service] = @[]
+    var unresolved: seq[Service] = @[]
+    resolveDependencies(logger, services[0], resolved, unresolved)
     if workers > cpuinfo.countProcessors():
         logger.warning(&"The configured number of workers ({workers}) is greater than the number of CPU cores ({cpuinfo.countProcessors()}), performance may degrade")
     var workerCount: int = 0
@@ -223,8 +267,8 @@ proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
                 logger.error(&"An error occurred while forking to spawn services, trying again: {posix.strerror(posix.errno)}")
             elif pid == 0:
                 logger.trace(&"New child has been spawned")
-                if not servicesCopy[0].supervised:
-                    logger.info(&"Starting unsupervised service '{servicesCopy[0].name}'")
+                if not servicesCopy[0].supervised or servicesCopy[0].kind == Oneshot:
+                    logger.info(&"""Starting {(if servicesCopy[0].kind != Oneshot: "unsupervised" else: "oneshot")} service '{servicesCopy[0].name}'""")
                 else:
                     logger.info(&"Starting supervised service '{servicesCopy[0].name}'")
                 startService(logger, servicesCopy[0])

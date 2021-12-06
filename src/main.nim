@@ -38,35 +38,33 @@ proc addStuff =
     addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
     addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Shuld say destination does not exist
     addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
-    # Adds virtual filesystems (Update: apparently the kernel already mounts this stuff!)
-    #[
-    addFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
-    addFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
-    addFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
-    addFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
-    addFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
-    addFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
-    ]#
     addDirectory(newDirectory("test", 777))           # Should create a directory
     addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
     addDirectory(newDirectory("/dev/test/owo", 000))  # Should say path does not exist
     # Shutdown handler to unmount disks
     addShutdownHandler(newShutdownHandler(unmountAllDisks))
     # Adds test services
-    addService(newService(name="echoer", description="prints owo", exec="/bin/echo owo",
-                          runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
-                          supervised=false, restart=Never, restartDelay=0))
-    addService(newService(name="errorer", description="la mamma di gavd", 
+    var echoer = newService(name="echoer", description="prints owo", exec="/bin/echo owo",
+                            runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
+                            supervised=false, restart=Never, restartDelay=0,
+                            depends=(@[]), provides=(@[]))
+    var errorer = newService(name="errorer", description="la mamma di gavd", 
                          exec="/bin/false", supervised=true, restart=OnFailure,
-                         restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
-    addService(newService(name="exiter", description="la mamma di licenziat", 
+                         restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
+                         depends=(@[echoer]), provides=(@[]))
+    var test = newService(name="broken", description="", exec="/bin/echo owo",
+                            runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
+                            supervised=false, restart=Never, restartDelay=0,
+                            depends=(@[echoer]), provides=(@[]))
+    var exiter = newService(name="exiter", description="la mamma di licenziat", 
                           exec="/bin/true", supervised=true, restart=Always,
-                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
-    #[
-    addService(newService(name="sleeper", description="la mamma di danieloz", 
-                          exec="/usr/bin/sleep", supervised=true, restart=Always,
-                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple))
-    ]#
+                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
+                          depends=(@[errorer]), provides=(@[]))
+    addService(errorer)
+    addService(echoer)
+    addService(exiter)
+    addService(test)
+    echoer.depends.add(test)
 
 
 proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
