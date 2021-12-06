@@ -16,4 +16,4 @@ vmlinuz*
 debian*
 start.sh
 rebuild.sh
-
+vm.qcow2
