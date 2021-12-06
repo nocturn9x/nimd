@@ -28,7 +28,7 @@ NimD assumes that the standard file descriptors 0, 1 and 2 (stdin, stdout and st
 know how to check for a proper set of file descriptors and connect them manually, please make a PR, I'd love to hear how to do that.
 
 When mounting the filesystem, NimD is at least somewhat smart:
-- First, it'll try to mount the standard POSIX virtual filesystems (/proc, /sys, etc) if they're not mounted already
+- First, it'll try to mount the standard POSIX virtual filesystems (/proc, /sys, etc) if they're not mounted already (you specify which)
 - Then, it'll parse /etc/fstab and mount all the disks from there as well (unless they are already mounted, of course).
     Drive IDs/UUIDs, LABELs and PARTUUIDs are also supported and are automatically resolved to their respective /dev/disk/by-XXX symlink
 

@@ -78,7 +78,9 @@ proc reapProcess*(logger: Logger) =
     ## and restarts them as needed
     logger.debug("Handling SIGCHLD")
     var status: cint
-    discard posix.waitPid(-1, status, WNOHANG)   # This doesn't hang, which is what we want
+    logger.trace("Calling waitpid() on -1")
+    var returnCode = posix.waitPid(-1, status, WNOHANG)   # This doesn't hang, which is what we want
+    logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}")
 
 
 proc exists*(p: string): bool =

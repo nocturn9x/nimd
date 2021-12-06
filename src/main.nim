@@ -40,12 +40,12 @@ proc addStuff =
     addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
     # Adds virtual filesystems (Update: apparently the kernel already mounts this stuff!)
     #[
-    addVFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
-    addVFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
+    addFS(newFilesystem(source="proc", target="/proc", fstype="proc", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
+    addFS(newFilesystem(source="sys", target="/sys", fstype="sysfs", mountflags=0u64, data="nosuid,noexec,nodev", dump=0u8, pass=0u8))
+    addFS(newFilesystem(source="run", target="/run", fstype="tmpfs", mountflags=0u64, data="mode=0755,nosuid,nodev", dump=0u8, pass=0u8))
+    addFS(newFilesystem(source="dev", target="/dev", fstype="devtmpfs", mountflags=0u64, data="mode=0755,nosuid", dump=0u8, pass=0u8))
+    addFS(newFilesystem(source="devpts", target="/dev/pts", fstype="devpts", mountflags=0u64, data="mode=0620,gid=5,nosuid,noexec", dump=0u8, pass=0u8))
+    addFS(newFilesystem(source="shm", target="/dev/shm", fstype="tmpfs", mountflags=0u64, data="mode=1777,nosuid,nodev", dump=0u8, pass=0u8))
     ]#
     addDirectory(newDirectory("test", 777))           # Should create a directory
     addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
@@ -72,7 +72,7 @@ proc addStuff =
 proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
     ## NimD's entry point and setup
     ## function
-    logger.debug("Starting NimD: A minimal, self-contained dependency-based Linux init system written in Nim")
+    logger.debug("Starting NimD: A minimal, self-contained, dependency-based Linux init system written in Nim")
     logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
     logger.trace("Calling getCurrentProcessId()")
     let pid = getCurrentProcessId()
@@ -84,15 +84,12 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     logger.trace(&"getuid() returned {uid}")
     if uid != 0:
         logger.fatal(&"NimD must run as root, but current user id is {uid}")
-        nimDExit(logger, EPERM)   # EPERM - Operation not permitted
+        nimDExit(logger, EPERM, emerg=false)   # EPERM - Operation not permitted
     logger.trace("Setting up signal handlers")
     onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
             SIGTRAP, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGTERM, SIGINT):  # 6 is SIGIOT
         # Can't capture local variables because this implicitly generates
-        # a noconv procedure, so we use getDefaultLogger() instead. Must find
-        # a better solution long-term because we need the configuration from
-        # our own logger object (otherwise we'd always create a new one and
-        # never switch our logs to file once booting is completed)
+        # a noconv procedure, so we use getDefaultLogger() instead
         getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
     onSignal(SIGCHLD):
         # One of the key features of an init system is reaping child
@@ -102,10 +99,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     try:
         if mountDisks:
             logger.info("Mounting filesystem")
-            logger.info("Mounting virtual disks")
-            mountVirtualDisks(logger)
-            logger.info("Mounting real disks")
-            mountRealDisks(logger, fstab)
+            mountDisks(logger, fstab)
         else:
             logger.info("Skipping disk mounting, assuming this has already been done")
         logger.info("Creating symlinks")

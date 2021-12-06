@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import strformat
+import strutils
 import cpuinfo
 import tables
 import osproc
@@ -112,8 +113,10 @@ proc supervisorWorker(logger: Logger, service: Service, pid: int) =
     var returnCode: int
     var sig: int
     var process: Process
+    logger.debug("Switching logs to file")
     logger.switchToFile()
     while true:
+        logger.trace(&"Calling waitpid() on {pid}")
         returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
         if WIFEXITED(status):
             sig = 0
@@ -121,6 +124,7 @@ proc supervisorWorker(logger: Logger, service: Service, pid: int) =
             sig = WTERMSIG(status)
         else:
             sig = -1
+        logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}, setting sig to {sig}")
         case service.restart:
             of Never:
                 logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
@@ -165,7 +169,9 @@ proc startService(logger: Logger, service: Service) =
     ## Starts a single service (this is called by
     ## startServices below until all services have
     ## been started). This function is supposed to 
-    ## be called from a forked process!
+    ## be called from a forked process and it itself
+    ## forks to call supervisorWorker if the service
+    ## is a supervised one
     var process: Process
     try:
         var split = shlex(service.exec)
@@ -179,6 +185,7 @@ proc startService(logger: Logger, service: Service) =
         if service.supervised:
             var pid = posix.fork()
             if pid == 0:
+                logger.trace(&"New child has been spawned")
                 supervisorWorker(logger, service, process.processID)
         # If the service is unsupervised we just exit
     except:
@@ -192,7 +199,7 @@ proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
     ## Starts the registered services in the 
     ## given runlevel
     if workers > cpuinfo.countProcessors():
-        logger.warning(&"The configured number of workers ({workers}) is greater than the recommended one ({cpuinfo.countProcessors()}), performance may degrade")
+        logger.warning(&"The configured number of workers ({workers}) is greater than the number of CPU cores ({cpuinfo.countProcessors()}), performance may degrade")
     var workerCount: int = 0
     var status: cint
     var pid: int = posix.fork()
@@ -206,7 +213,10 @@ proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
                 servicesCopy.add(service)
         while servicesCopy.len() > 0:
             if workerCount == workers:
-                discard waitPid(cint(pid), status, WUNTRACED)
+                logger.debug(&"Worker queue full, waiting for some worker to exit...")
+                logger.trace(&"Calling waitpid() on {pid}")
+                var returnCode = waitPid(cint(pid), status, WUNTRACED)
+                logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}")
                 dec(workerCount)
             pid = posix.fork()
             if pid == -1:
@@ -225,4 +235,7 @@ proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
                 servicesCopy.del(0)
         quit(0)
     else:
-        discard waitPid(cint(pid), status, WUNTRACED)
+        logger.debug(&"Waiting for completion of service spawning in runlevel {($level).toLowerAscii()}")
+        logger.trace(&"Calling waitpid() on {pid}")
+        var returnCode = waitPid(cint(pid), status, WUNTRACED)
+        logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}")

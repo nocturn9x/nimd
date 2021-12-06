@@ -56,11 +56,12 @@ type
         data: string
         dump: uint8
         pass: uint8
+        virtual: bool   # Is this a virtual filesystem?
 
 
-proc newFilesystem*(source, target, fstype: string, mountflags: uint64 = 0, data: string = "", dump: uint8 = 0, pass: uint8 = 0): Filesystem =
+proc newFilesystem*(source, target, fstype: string, mountflags: uint64 = 0, data: string = "", dump: uint8 = 0, pass: uint8 = 0, virtual: bool = false): Filesystem =
     ## Initializes a new filesystem object
-    result = Filesystem(source: source, target: target, fstype: fstype, mountflags: mountflags, data: data, dump: dump, pass: pass)
+    result = Filesystem(source: source, target: target, fstype: fstype, mountflags: mountflags, data: data, dump: dump, pass: pass, virtual: virtual)
 
 
 proc newSymlink*(source, dest: string): Symlink =
@@ -73,10 +74,13 @@ proc newDirectory*(path: string, permissions: uint64): Directory =
     result = Directory(path: path, permissions: permissions)
 
 
-# Stores VFS entries to be mounted upon boot (usually /proc, /sys, etc). You could
-# do this with a oneshot service, but it's a simple enough feature to have it built-in
-# into the init itself (especially since it makes error handling a heck of a lot easier)
-var virtualFileSystems: seq[Filesystem] = @[]
+# Stores filesystem entries to be mounted upon boot. You could do this with a oneshot
+# service, but it's a simple enough feature to have it built-in into the init itself, 
+# especially since it makes error handling a heck of a lot easier.
+# Note this has to be used only for stuff that's not already in /etc/fstab, like virtual
+# filesystems (/proc, /sys, etc) if your kernel doesn't already mount them upon startup
+# (which it most likely does)
+var fileSystems: seq[Filesystem] = @[]
 # Since creating symlinks is a pretty typical operation for an init, NimD
 # provides a straightforward way to create them on boot without creating
 # full fledged oneshot services 
@@ -86,38 +90,38 @@ var symlinks: seq[Symlink ] = @[]
 var directories: seq[Directory] = @[]
 
 
-proc addVFS*(filesystem: FileSystem) =
-    ## Adds a virtual filesystem to be mounted upon boot
-    virtualFileSystems.add(filesystem)
+proc addFS*(filesystem: FileSystem) =
+    ## Adds a filesystem to be mounted upon boot
+    filesystems.add(filesystem)
 
 
-proc removeVFS*(filesystem: Filesystem) =
-    ## Removes a virtual filesystem. Note
+proc removeFS*(filesystem: Filesystem) =
+    ## Unregisters a filesystem. Note
     ## this has no effect if executed after
-    ## the VFSs have been mounted (i.e. after
-    ## a call to mountVirtualDisks)
-    for i, f in virtualFileSystems:
+    ## the filesystems have been mounted (i.e. after
+    ## a call to mountDisks)
+    for i, f in filesystems:
         if f == filesystem:
-            virtualFileSystems.del(i)
+            filesystems.del(i)
 
 
-iterator getAllVFSPaths: string =
+iterator getAllFSPaths: string =
     ## Yields all of the mount points of
-    ## the currently registered virtual
+    ## the currently registered
     ## filesystems
-    for vfs in virtualFileSystems:
-        yield vfs.target
+    for fs in filesystems:
+        yield fs.target
 
 
-iterator getAllVFSNames: string =
+iterator getAllFSNames: string =
     ## This is similar to what
     ## getAllVFSPaths does, except
     ## it yields the VFS' source
     ## instead of the mount point 
     ## (which in this case is just
     ## an alias, hence the "names" part)
-    for vfs in virtualFileSystems:
-        yield vfs.source
+    for fs in filesystems:
+        yield fs.source
 
 
 proc addSymlink*(symlink: Symlink) =
@@ -231,12 +235,13 @@ proc checkDiskIsMounted(search: Filesystem, expand: bool = false): bool =
     return false
 
 
-proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
-    ## Mounts real disks from /etc/fstab
+proc mountDisks*(logger: Logger, fstab: string = "/etc/fstab") =
+    ## Mounts disks from /etc/fstab as well as the ones registered
+    ## via addFS (these are mounted first)
     var retcode = 0
     try:
-        logger.debug(&"Reading disk entries from {fstab}")
-        for entry in parseFileSystemTable(readFile(fstab)):
+        logger.debug(&"Reading disk entries from {fstab} (mounting custom filesystems first!)")
+        for entry in filesystems & parseFileSystemTable(readFile(fstab)):
             if checkDiskIsMounted(entry, expand=true):
                 logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.fstype}) at {entry.target}: already mounted")
                 continue
@@ -255,28 +260,6 @@ proc mountRealDisks*(logger: Logger, fstab: string = "/etc/fstab") =
         nimDExit(logger, 131)
 
 
-proc mountVirtualDisks*(logger: Logger) =
-    ## Mounts POSIX virtual filesystems/partitions,
-    ## such as /proc and /sys
-    var retcode = 0
-    for entry in virtualFileSystems:
-        if checkDiskIsMounted(entry):
-            logger.debug(&"Skipping mounting filesystem {entry.source} ({entry.fstype}) at {entry.target}: already mounted")
-            continue
-        logger.debug(&"Mounting filesystem {entry.source} ({entry.fstype}) at {entry.target} with mount option(s) {entry.data}")
-        logger.trace(&"Calling mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}')")
-        retcode = mount(entry.source, entry.target, entry.fstype, entry.mountflags, entry.data)
-        logger.trace(&"mount('{entry.source}', '{entry.target}', '{entry.fstype}', {entry.mountflags}, '{entry.data}') returned {retcode}")
-        if retcode == -1:
-            logger.error(&"Mounting disk {entry.source} at {entry.target} has failed with error {posix.errno}: {posix.strerror(posix.errno)}")
-            # Resets the error code
-            posix.errno = cint(0)
-            logger.fatal("Failed mounting vital system disk partition, system is likely corrupted, booting cannot continue")
-            nimDExit(logger, 131) # ENOTRECOVERABLE - State not recoverable
-        else:
-            logger.debug(&"Mounted {entry.source} at {entry.target}")
-
-
 proc unmountAllDisks*(logger: Logger, code: int) =
     ## Unmounts all currently mounted disks, including the ones that
     ## were not mounted trough fstab but excluding virtual filesystems
@@ -293,13 +276,16 @@ proc unmountAllDisks*(logger: Logger, code: int) =
             # as they are critical system components (especially /proc): maybe we should use stat()
             # instead and make a generic check, but adding a system call into the mix seems overkill given
             # we alredy have all the info we need
-            if entry in virtualFileSystems:
+            if entry.virtual:
+                # Detects VFS manually
                 continue
-            for source in getAllVFSNames():
+            for source in getAllFSNames():
+                # Detects VFS by name
                 if entry.source == source:
                     isVFS = true
                     break
-            for path in getAllVFSPaths():
+            for path in getAllFSPaths():
+                # Detects VFS by mount point
                 if entry.target.startswith(path):
                     isVFS = true
                     break
