@@ -17,3 +17,4 @@ debian*
 start.sh
 rebuild.sh
 vm.qcow2
+*.tar.*
