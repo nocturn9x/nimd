@@ -292,7 +292,7 @@ proc startService(logger: Logger, service: Service) =
         var arguments = split.words
         let progName = arguments[0]
         arguments = arguments[1..^1]
-        process = startProcess(progName, workingDir=service.workDir, args=arguments)
+        process = startProcess(progName, workingDir=service.workDir, args=arguments, options={poParentStreams})
         if service.supervised and service.kind != Oneshot:
             var pid = posix.fork()
             if pid == 0:

@@ -59,10 +59,16 @@ proc addStuff =
                           exec="/bin/true", supervised=true, restart=Always,
                           restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
                           depends=(@[newDependency(Other, errorer)]), provides=(@[]))
+    var shell = newService(name="login", description="A simple login shell", kind=Simple,
+                           getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
+                           supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[])
+                           )
     addService(errorer)
     addService(echoer)
     addService(exiter)
     addService(test)
+    addService(shell)
+
 
 
 proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab", setHostname: bool = true, workerCount: int = 1) =

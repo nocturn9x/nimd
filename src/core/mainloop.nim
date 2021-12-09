@@ -29,7 +29,6 @@ proc mainLoop*(logger: Logger) =
     logger.info("System initialization complete, going idle")
     logger.switchToFile()
     try:
-        discard execShellCmd("/bin/login -f root")  # TODO: Use a service
         while true:
             sleepSeconds(30)
     except:
