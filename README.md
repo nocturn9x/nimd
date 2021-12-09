@@ -76,10 +76,21 @@ stdout = /var/log/sshd     # Path of the stdout log for the service
 stdin  = /dev/null         # Path of the stdin fd for the service
 ```
 
-A dependency name can either be the name of a unit file (without the `.conf` extension), or one of the following placeholders:
+__Note__: Unsupervised services cannot be restarted, as NimD has no control over them once they're spawned.
+
+
+A dependency name can either be the name of a unit file (case sensitive, but without the `.conf` extension), or one of the following placeholders:
 - `net` -> Stands for network connection. Services like NetworkManager and dhcpcd should be set as providers for this
 - `fs`  -> If you mount your disks using a oneshot service (recommended for the best experience), your service should provide this
+- `ssh` -> The service provides some sort of SSH functionality
+- `ftp` -> The service provides an FTP server
+- `http` -> The service is an HTTP webserver
 
+Note that NimD resolves placeholders before service names: this means that if you have a service named `ssh.conf`, using `ssh` as 
+a dependency will __not__ set that service as a dependency and will __not__ override the default behavior unless said unit file also has
+`provides=ssh` in it. Also note that multiple providers for the same service raise a warning by default and cause NimD to let the alphabet decide 
+which dependency is started (i.e. they are sorted lexicographically by their filename, without the extension, and the first is picked), but this
+behavior can be changed (e.g. raising an error instead)
 
 ## Configuring NimD
 
@@ -94,12 +105,14 @@ logFile = /var/log/nimd   # Path to log file
 
 [Filesystem]
 
-autoMount      = true                               # Automatically parses /etc/fstab and mounts disks
-fstabPath      = /etc/fstab                         # Path to your system's fstab (defaults to /etc/fstab)
-createDirs     = /path/to/dir1, /path/to/dir2       # Creates these directories on boot. Empty to disable
-createSymlinks = /path/to/dir1, /path/to/dir2       # Creates these symlinks on boot. Empty to disable
+autoMount      = true                                    # Automatically parses /etc/fstab and mounts disks
+autoUnmount    = true                                    # Automatically parses /proc/mounts and unmounts everything on shutdown
+fstabPath      = /etc/fstab                              # Path to your system's fstab (defaults to /etc/fstab)
+createDirs     = /path/to/dir1, /path/to/dir2            # Creates these directories on boot. Empty to disable
+createSymlinks = /path/to/symlink:/path/to/dest, ...     # Creates these symlinks on boot. Empty to disable
 
 [Misc]
 
-controlSocket = /var/run/nimd.sock    # Path to the Unix domain socket to create for IPC
+controlSocket        = /var/run/nimd.sock    # Path to the Unix domain socket to create for IPC
+onDependencyConflict = skip                  # Other option: warn, error                   
 ```

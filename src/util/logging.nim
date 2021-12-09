@@ -40,7 +40,7 @@ type
 
 var defaultLevel = LogLevel.Info
 var logFile = "/var/log/nimd"
-var logToFile: bool = false
+var logToFileOnly: bool = false
 
 
 proc log(self: Logger, level: LogLevel = defaultLevel, message: string)  # Forward declaration
@@ -79,52 +79,71 @@ proc log(self: Logger, level: LogLevel = defaultLevel, message: string) =
 # Do NOT touch the alignment offsets or your console output and logs will look like trash
 
 
+proc lockFile(logger: Logger, handle: File) =
+    ## Locks the given file across the whole system for writing using fcntl()
+    if fcntl(handle.getFileHandle(), F_WRLCK) == -1:
+        stderr.writeLine(&"Error while locking handle (code {posix.errno}, {posix.strerror(posix.errno)}): output may be mangled")
+
+
+proc unlockFile(logger: Logger, handle: File) =
+    ## Unlocks the given file across the whole system for writing using fcntl()
+    if fcntl(handle.getFileHandle(), F_UNLCK) == -1:
+        stderr.writeLine(&"Error while locking stderr (code {posix.errno}, {posix.strerror(posix.errno)}): output may be mangled")
+
+
 proc logTraceStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgMagenta)
     stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} TRACE {"-":>3} ({posix.getpid():03})] {message}""")
-    stderr.flushFile()
     setForegroundColor(fgDefault)
+    logger.unlockFile(stderr)
 
 
 proc logDebugStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgCyan)
     stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} DEBUG {"-":>3} ({posix.getpid():03})] {message}""")
-    stderr.flushFile()
     setForegroundColor(fgDefault)
+    logger.unlockFile(stderr)
 
 
 proc logInfoStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgGreen)
     stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} INFO {"-":>4} ({posix.getpid():03})] {message}""")
-    stderr.flushFile()
     setForegroundColor(fgDefault)
+    logger.unlockFile(stderr)
 
 
 proc logWarningStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgYellow)
     stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} WARNING {"-":>1} ({posix.getpid():03})] {message}""")
-    stderr.flushFile()
     setForegroundColor(fgDefault)
+    logger.unlockFile(stderr)
 
 
 proc logErrorStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgRed)
     stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] {message}""")
-    stderr.flushFile()
     setForegroundColor(fgDefault)
+    logger.unlockFile(stderr)
 
 
 proc logCriticalStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgYellow)
     setBackgroundColor(bgRed)
     stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<4} {"-":>1} CRITICAL {"-":>2} ({posix.getpid():03})]""")
     setBackgroundColor(bgDefault)
     stderr.writeLine(&""" {message}""")
     setForegroundColor(fgDefault)
-    stderr.flushFile()
+    logger.unlockFile(stderr)
 
 
 proc logFatalStderr(self: LogHandler, logger: Logger, message: string) =
+    logger.lockFile(stderr)
     setForegroundColor(fgBlack)
     setBackgroundColor(bgRed)
     stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<5} {"-":>1} {"":>1} FATAL {"-":>3} ({posix.getpid():03})]""")
@@ -132,51 +151,64 @@ proc logFatalStderr(self: LogHandler, logger: Logger, message: string) =
     setBackgroundColor(bgDefault)
     stderr.writeline(&""" {message}""")
     setForegroundColor(fgDefault)
-    stderr.flushFile()
-
+    logger.unlockFile(stderr)
+    
 
 proc logTraceFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} TRACE {"-":>3} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} TRACE {"-":>3} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc logDebugFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} DEBUG {"-":>3} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} DEBUG {"-":>3} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc logInfoFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} INFO {"-":>4} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} INFO {"-":>4} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc logWarningFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} WARNING {"-":>1} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} WARNING {"-":>1} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc logErrorFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc logCriticalFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<4} {"-":>1} CRITICAL {"-":>2} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<4} {"-":>1} CRITICAL {"-":>2} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc logFatalFile(self: LogHandler, logger: Logger, message: string) =
-    StreamHandler(self).file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<5} {"-":>1} {"":>1} FATAL {"-":>3} ({posix.getpid():03})] {message}""")
-    StreamHandler(self).file.flushFile()
+    var self = StreamHandler(self)
+    logger.lockFile(self.file)
+    self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<5} {"-":>1} {"":>1} FATAL {"-":>3} ({posix.getpid():03})] {message}""")
+    logger.unlockFile(self.file)
 
 
 proc switchToFile*(self: Logger) =
     ## Switches logging to file and
     ## changes the behavior of getDefaultLogger
     ## accordingly
-    if logToFile:
+    if logToFileOnly:
         return
-    logToFile = true
     self.handlers = @[]   # Don't you love it when you can just let the GC manage memory for you?
     self.addHandler(createStreamHandler(logTraceFile, LogLevel.Trace, logFile))
     self.addHandler(createStreamHandler(logDebugFile, LogLevel.Debug, logFile))
@@ -191,9 +223,8 @@ proc switchToConsole*(self: Logger) =
     ## Switches logging to the console and
     ## changes the behavior of getDefaultLogger
     ## accordingly
-    if not logToFile:
+    if not logToFileOnly:
         return
-    logToFile = false
     self.handlers = @[]
     self.addHandler(createHandler(logTraceStderr, LogLevel.Trace))
     self.addHandler(createHandler(logDebugStderr, LogLevel.Debug))
@@ -211,8 +242,7 @@ proc getDefaultLogger*(): Logger =
     ## standard error with some basic info like the
     ## current date and time and the log level
     result = newLogger()
-    if not logToFile:
-        setStdIoUnbuffered()   # Colors don't work otherwise!
+    if not logToFileOnly:
         result.addHandler(createHandler(logTraceStderr, LogLevel.Trace))
         result.addHandler(createHandler(logDebugStderr, LogLevel.Debug))
         result.addHandler(createHandler(logInfoStderr, LogLevel.Info))
@@ -220,11 +250,10 @@ proc getDefaultLogger*(): Logger =
         result.addHandler(createHandler(logErrorStderr, LogLevel.Error))
         result.addHandler(createHandler(logCriticalStderr, LogLevel.Critical))
         result.addHandler(createHandler(logFatalStderr, LogLevel.Fatal))
-    else:
-        result.addHandler(createStreamHandler(logTraceFile, LogLevel.Trace, logFile))
-        result.addHandler(createStreamHandler(logDebugFile, LogLevel.Debug, logFile))
-        result.addHandler(createStreamHandler(logInfoFile, LogLevel.Info, logFile))
-        result.addHandler(createStreamHandler(logWarningFile, LogLevel.Warning, logFile))
-        result.addHandler(createStreamHandler(logErrorFile, LogLevel.Error, logFile))
-        result.addHandler(createStreamHandler(logCriticalFile, LogLevel.Critical, logFile))
-        result.addHandler(createStreamHandler(logFatalFile, LogLevel.Fatal, logFile))
+    result.addHandler(createStreamHandler(logTraceFile, LogLevel.Trace, logFile))
+    result.addHandler(createStreamHandler(logDebugFile, LogLevel.Debug, logFile))
+    result.addHandler(createStreamHandler(logInfoFile, LogLevel.Info, logFile))
+    result.addHandler(createStreamHandler(logWarningFile, LogLevel.Warning, logFile))
+    result.addHandler(createStreamHandler(logErrorFile, LogLevel.Error, logFile))
+    result.addHandler(createStreamHandler(logCriticalFile, LogLevel.Critical, logFile))
+    result.addHandler(createStreamHandler(logFatalFile, LogLevel.Fatal, logFile))

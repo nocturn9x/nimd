@@ -36,11 +36,10 @@ proc addStuff =
     # Tests here. Check logging output (debug) to see if
     # they work as intended
     addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
-    addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Shuld say destination does not exist
+    addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Should say destination does not exist
     addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
     addDirectory(newDirectory("test", 777))           # Should create a directory
     addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
-    addDirectory(newDirectory("/dev/test/owo", 000))  # Should say path does not exist
     # Shutdown handler to unmount disks
     addShutdownHandler(newShutdownHandler(unmountAllDisks))
     # Adds test services
@@ -51,25 +50,25 @@ proc addStuff =
     var errorer = newService(name="errorer", description="la mamma di gavd", 
                          exec="/bin/false", supervised=true, restart=OnFailure,
                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
-                         depends=(@[echoer]), provides=(@[]))
+                         depends=(@[newDependency(Other, echoer)]), provides=(@[]))
     var test = newService(name="broken", description="", exec="/bin/echo owo",
                             runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
                             supervised=false, restart=Never, restartDelay=0,
-                            depends=(@[echoer]), provides=(@[]))
+                            depends=(@[newDependency(Other, echoer)]), provides=(@[]))
     var exiter = newService(name="exiter", description="la mamma di licenziat", 
                           exec="/bin/true", supervised=true, restart=Always,
                           restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
-                          depends=(@[errorer]), provides=(@[]))
+                          depends=(@[newDependency(Other, errorer)]), provides=(@[]))
     addService(errorer)
     addService(echoer)
     addService(exiter)
     addService(test)
-    echoer.depends.add(test)
 
 
-proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab") = 
+proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab", setHostname: bool = true, workerCount: int = 1) =
     ## NimD's entry point and setup
     ## function
+    setStdIoUnbuffered()   # Colors and output synchronization don't work otherwise
     logger.debug("Starting NimD: A minimal, self-contained, dependency-based Linux init system written in Nim")
     logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
     logger.trace("Calling getCurrentProcessId()")
@@ -110,12 +109,15 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab")
     except:
         logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131, emerg=false)
-    logger.info("Setting hostname")
-    logger.debug(&"Hostname was set to '{setHostname(logger)}'")
+    if setHostname:
+        logger.info("Setting hostname")
+        logger.debug(&"Hostname was set to '{misc.setHostname(logger)}'")
+    else:
+        logger.info("Skipping setting hostname")
     logger.debug("Entering critical fork() section: blocking signals")
     blockSignals(logger)   # They are later unblocked in mainLoop
     logger.info("Processing boot runlevel")
-    startServices(logger, workers=1, level=Boot)
+    startServices(logger, workers=workerCount, level=Boot)
     logger.debug("Starting main loop")
     mainLoop(logger)
 

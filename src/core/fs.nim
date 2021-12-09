@@ -349,13 +349,14 @@ proc createDirectories*(logger: Logger) =
     ## in their config. Note that the entire path
     ## of the directory is created if it does not 
     ## exist yet
-    var hasChmod = false
+    var hasChmod = true
     try:
         if findExe("chmod").isEmptyOrWhitespace():
             logger.warning("Could not find chmod binary, directory permissions will default to OS configuration")
-            hasChmod = true
+            hasChmod = false
     except:
-      logger.error(&"Failed to search for chmod binary: {getCurrentExceptionMsg()}")  
+      logger.error(&"Failed to search for chmod binary, directory permissions will default to OS configuration: {getCurrentExceptionMsg()}")
+      hasChmod = false
     for dir in directories:
         try:
             if exists(dir.path):
@@ -374,6 +375,6 @@ proc createDirectories*(logger: Logger) =
                 if hasChmod:
                     logger.debug(&"Setting permissions to {dir.permissions} for {dir.path}")
                     if (let code = execShellCmd(&"chmod -R {dir.permissions} {dir.path}"); code) != 0:
-                        logger.warning(&"Command 'chmod -R {dir.permissions}' exited non-zero status code {code}")
+                        logger.warning(&"Command 'chmod -R {dir.permissions} {dir.path}' exited non-zero status code {code}")
         except:
             logger.error(&"Failed to create directory at {dir.path}: {getCurrentExceptionMsg()}")
