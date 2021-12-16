@@ -15,6 +15,7 @@ import strformat
 import strutils
 import cpuinfo
 import tables
+import streams
 import osproc
 import posix
 import shlex
@@ -61,6 +62,7 @@ type
         restartDelay: int
         depends: seq[Dependency]
         provides: seq[Dependency]
+        useParentStreams: bool
         ## These two fields are
         ## used by the dependency
         ## resolver
@@ -75,11 +77,11 @@ proc newDependency*(kind: DependencyKind, provider: Service): Dependency =
 
 
 proc newService*(name, description: string, kind: ServiceKind, workDir: string, runlevel: RunLevel, exec: string, supervised: bool, restart: RestartKind,
-                 restartDelay: int, depends, provides: seq[Dependency]): Service =
+                 restartDelay: int, depends, provides: seq[Dependency], useParentStreams: bool = false): Service =
     ## Creates a new service object
     result = Service(name: name, description: description, kind: kind, workDir: workDir, runLevel: runLevel,
                      exec: exec, supervised: supervised, restart: restart, restartDelay: restartDelay, 
-                     depends: depends, provides: provides, isMarked: false, isResolved: false)
+                     depends: depends, provides: provides, isMarked: false, isResolved: false, useParentStreams: useParentStreams)
     result.provides.add(newDependency(Other, result))
 
 
@@ -197,6 +199,7 @@ proc removeManagedProcess*(pid: int) =
 proc addManagedProcess*(pid: int, service: Service) =
     ## Adds a managed process to the
     ## table
+    discard posix.setsid()   # For cgroups support
     processIDs[pid] = service
 
 
@@ -216,64 +219,88 @@ proc removeService*(service: Service) =
             break
 
 
-proc supervisorWorker(logger: Logger, service: Service, pid: int) =
+proc loggerWorker(logger: Logger, service: Service, process: Process) =
+    ## Captures the output of a given process and relays it
+    ## in a formatted manner into our logging system
+    try:
+        logger.debug("Switching logs to file")
+        logger.switchToFile()
+        var line: string = ""
+        var stream = process.outputStream
+        while stream.readLine(line):
+            logger.info(&"{service.name}: {line}")
+    except:
+        logger.error(&"An error occurred in loggerWorker: {getCurrentExceptionMsg()}")
+        quit(-1)
+
+
+proc supervisorWorker(logger: Logger, service: Service, process: Process) =
     ## This is the actual worker that supervises the service process
     logger.trace(&"New supervisor for service '{service.name}' has been spawned")
-    var pid = pid
-    var status: cint
-    var returnCode: int
-    var sig: int
-    var process: Process
-    logger.debug("Switching logs to file")
-    logger.switchToFile()
-    while true:
-        logger.trace(&"Calling waitpid() on {pid}")
-        returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
-        if WIFEXITED(status):
-            sig = 0
-        elif WIFSIGNALED(status):
-            sig = WTERMSIG(status)
-        else:
-            sig = -1
-        logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}, setting sig to {sig}")
-        case service.restart:
-            of Never:
-                logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
-                break
-            of Always:
-                if sig > 0:
-                    logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
-                elif sig == 0:
-                    logger.info(&"Service '{service.name}' has exited gracefully, sleeping {service.restartDelay} seconds before restarting it")
-                else:
-                    logger.info(&"Service '{service.name}' has exited, sleeping {service.restartDelay} seconds before restarting it")
-                removeManagedProcess(pid)
-                sleep(service.restartDelay * 1000)
-                var split = shlex(service.exec)
-                if split.error:
-                    logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+    if not service.useParentStreams:
+        logger.trace(&"Spawning log watcher for '{service.name}'")
+        var p = posix.fork()
+        if p == -1:
+            logger.error(&"Error, cannot fork: {posix.strerror(posix.errno)}")
+        elif p == 0:
+            logger.trace(&"New child has been spawned")
+            loggerWorker(logger, service, process)
+    else:
+        var pid = process.processID
+        var status: cint
+        var returnCode: int
+        var sig: int
+        var process: Process
+        logger.debug("Switching logs to file")
+        logger.switchToFile()
+        while true:
+            logger.trace(&"Calling waitpid() on {pid}")
+            returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
+            if WIFEXITED(status):
+                sig = 0
+            elif WIFSIGNALED(status):
+                sig = WTERMSIG(status)
+            else:
+                sig = -1
+            logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}, setting sig to {sig}")
+            case service.restart:
+                of Never:
+                    logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
                     break
-                var arguments = split.words
-                let progName = arguments[0]
-                arguments = arguments[1..^1]
-                process = startProcess(progName, workingDir=service.workDir, args=arguments)
-                pid = process.processID()
-            of OnFailure:
-                if sig > 0:
-                    logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
-                removeManagedProcess(pid)
-                sleep(service.restartDelay * 1000)
-                var split = shlex(service.exec)
-                if split.error:
-                    logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
-                    break
-                var arguments = split.words
-                let progName = arguments[0]
-                arguments = arguments[1..^1]
-                process = startProcess(progName, workingDir=service.workDir, args=arguments)
-                pid = process.processID()
-    if process != nil:
-        process.close()
+                of Always:
+                    if sig > 0:
+                        logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+                    elif sig == 0:
+                        logger.info(&"Service '{service.name}' has exited gracefully, sleeping {service.restartDelay} seconds before restarting it")
+                    else:
+                        logger.info(&"Service '{service.name}' has exited, sleeping {service.restartDelay} seconds before restarting it")
+                    removeManagedProcess(pid)
+                    sleep(service.restartDelay * 1000)
+                    var split = shlex(service.exec)
+                    if split.error:
+                        logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+                        break
+                    var arguments = split.words
+                    let progName = arguments[0]
+                    arguments = arguments[1..^1]
+                    process = startProcess(progName, workingDir=service.workDir, args=arguments)
+                    pid = process.processID()
+                of OnFailure:
+                    if sig > 0:
+                        logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+                    removeManagedProcess(pid)
+                    sleep(service.restartDelay * 1000)
+                    var split = shlex(service.exec)
+                    if split.error:
+                        logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+                        break
+                    var arguments = split.words
+                    let progName = arguments[0]
+                    arguments = arguments[1..^1]
+                    process = startProcess(progName, workingDir=service.workDir, args=arguments)
+                    pid = process.processID()
+        if process != nil:
+            process.close()
 
 
 proc startService(logger: Logger, service: Service) =
@@ -292,18 +319,18 @@ proc startService(logger: Logger, service: Service) =
         var arguments = split.words
         let progName = arguments[0]
         arguments = arguments[1..^1]
-        process = startProcess(progName, workingDir=service.workDir, args=arguments, options={poParentStreams})
-        if service.supervised and service.kind != Oneshot:
+        process = startProcess(progName, workingDir=service.workDir, args=arguments, options=if service.useParentStreams: {poParentStreams} else: {poUsePath, poDaemon, poStdErrToStdOut})
+        if service.supervised or service.kind != Oneshot:
             var pid = posix.fork()
-            if pid == 0:
+            if pid == -1:
+                logger.error(&"Error, cannot fork: {posix.strerror(posix.errno)}")
+            elif pid == 0:
                 logger.trace(&"New child has been spawned")
-                supervisorWorker(logger, service, process.processID)
-        # If the service is unsupervised we just exit
+                supervisorWorker(logger, service, process)
+        # If the service is unsupervised we just spawn the logger worker
+        loggerWorker(logger, service, process)
     except:
-        logger.error(&"Error while starting service {service.name}: {getCurrentExceptionMsg()}")
-    if process != nil:
-        process.close()
-    quit(0)
+        logger.error(&"Error while starting service '{service.name}': {getCurrentExceptionMsg()}")
 
 
 proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =

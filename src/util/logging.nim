@@ -82,13 +82,17 @@ proc log(self: Logger, level: LogLevel = defaultLevel, message: string) =
 proc lockFile(logger: Logger, handle: File) =
     ## Locks the given file across the whole system for writing using fcntl()
     if fcntl(handle.getFileHandle(), F_WRLCK) == -1:
-        stderr.writeLine(&"Error while locking handle (code {posix.errno}, {posix.strerror(posix.errno)}): output may be mangled")
+         setForegroundColor(fgRed)
+         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] Error while locking handle (code {posix.errno}, {posix.strerror(posix.errno)}): output may be mangled""")
+         setForegroundColor(fgDefault)
 
 
 proc unlockFile(logger: Logger, handle: File) =
     ## Unlocks the given file across the whole system for writing using fcntl()
     if fcntl(handle.getFileHandle(), F_UNLCK) == -1:
-        stderr.writeLine(&"Error while locking stderr (code {posix.errno}, {posix.strerror(posix.errno)}): output may be mangled")
+         setForegroundColor(fgRed)
+         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] Error while unlocking handle (code {posix.errno}, {posix.strerror(posix.errno)}): output may be missing""")
+         setForegroundColor(fgDefault)
 
 
 proc logTraceStderr(self: LogHandler, logger: Logger, message: string) =

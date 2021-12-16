@@ -38,12 +38,12 @@ proc addStuff =
     addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
     addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Should say destination does not exist
     addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
-    addDirectory(newDirectory("test", 777))           # Should create a directory
+    addDirectory(newDirectory("test", 764))           # Should create a directory
     addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
     # Shutdown handler to unmount disks
     addShutdownHandler(newShutdownHandler(unmountAllDisks))
     # Adds test services
-    var echoer = newService(name="echoer", description="prints owo", exec="/bin/echo owo",
+    var echoer = newService(name="echoer", description="prints owo", exec="/bin/echo owoooooooooo",
                             runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
                             supervised=false, restart=Never, restartDelay=0,
                             depends=(@[]), provides=(@[]))
@@ -61,7 +61,8 @@ proc addStuff =
                           depends=(@[newDependency(Other, errorer)]), provides=(@[]))
     var shell = newService(name="login", description="A simple login shell", kind=Simple,
                            getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
-                           supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[])
+                           supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[]),
+                           useParentStreams=true
                            )
     addService(errorer)
     addService(echoer)
