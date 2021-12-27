@@ -224,12 +224,12 @@ proc streamLoggerWorker(logger: Logger, service: Service, stream: Stream) =
     ## in a formatted manner into our logging system
     try:
         logger.debug("Switching logs to file")
-        # logger.switchToFile()
+        logger.switchToFile()
         var line: string = ""
         while stream.readLine(line):
             logger.info(&"{service.name}: {line}")
     except:
-        logger.error(&"An error occurred in loggerWorker: {getCurrentExceptionMsg()}")
+        logger.error(&"An error occurred in streamLoggerWorker: {getCurrentExceptionMsg()}")
         quit(-1)
 
 
@@ -261,6 +261,7 @@ proc supervisorWorker(logger: Logger, service: Service, process: Process) =
         else:
             sig = -1
         logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}, setting sig to {sig}")
+        process.close()
         case service.restart:
             of Never:
                 logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
@@ -369,7 +370,7 @@ proc startServices*(logger: Logger, level: RunLevel, workers: int = 1) =
                     if service.supervised:
                         addManagedProcess(pid, service)
             if len(pids) == workers:
-                logger.debug(&"""Worker queue full, waiting for some worker{(if workers > 1: "s" else: "")} to exit...""")
+                logger.debug(&"""Worker queue full, waiting for some worker{(if workers > 1: "s" else: "")} to exit""")
                 for i, pid in pids:
                     logger.trace(&"Calling waitpid() on {pid}")
                     var returnCode = waitPid(cint(pid), status, WUNTRACED)
