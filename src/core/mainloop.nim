@@ -29,14 +29,14 @@ proc mainLoop*(logger: Logger) =
     startServices(logger, workers=1, level=Default)
     logger.debug(&"Unblocking signals")
     unblockSignals(logger)
-    logger.info("System initialization complete, going idle")
+    logger.info("System initialization complete, idling on control socket")
     var opType: string
     try:
         logger.trace("Calling initControlSocket()")
         var serverSocket = initControlSocket(logger)
         serverSocket.listen(5)
         var clientSocket = newSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
-        # logger.switchToFile()
+        logger.switchToFile()
         while true:
             serverSocket.accept(clientSocket)
             if clientSocket.recv(opType, size=1) == 0:
@@ -49,9 +49,6 @@ proc mainLoop*(logger: Logger) =
             # - 'h' -> halt
             # - 's' -> Services-related operations (start, stop, get status, etc.)
             case opType:
-                of "":
-                    logger.debug(&"Empty read from control socket: did the client disconnect?")
-                    continue
                 of "p":
                     logger.info("Received shutdown request")
                     shutdown(logger)
