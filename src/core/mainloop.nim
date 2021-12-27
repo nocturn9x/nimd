@@ -23,10 +23,10 @@ import shutdown
 
 
 
-proc mainLoop*(logger: Logger) =
+proc mainLoop*(logger: Logger, workers: int = 1) =
     ## NimD's main execution loop
     logger.info("Processing default runlevel")
-    startServices(logger, workers=1, level=Default)
+    startServices(logger, workers=workers, level=Default)
     logger.debug(&"Unblocking signals")
     unblockSignals(logger)
     logger.info("System initialization complete, idling on control socket")

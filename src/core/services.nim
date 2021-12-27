@@ -219,14 +219,13 @@ proc removeService*(service: Service) =
             break
 
 
-proc loggerWorker(logger: Logger, service: Service, process: Process) =
+proc streamLoggerWorker(logger: Logger, service: Service, stream: Stream) =
     ## Captures the output of a given process and relays it
     ## in a formatted manner into our logging system
     try:
         logger.debug("Switching logs to file")
-        logger.switchToFile()
+        # logger.switchToFile()
         var line: string = ""
-        var stream = process.outputStream
         while stream.readLine(line):
             logger.info(&"{service.name}: {line}")
     except:
@@ -244,63 +243,62 @@ proc supervisorWorker(logger: Logger, service: Service, process: Process) =
             logger.error(&"Error, cannot fork: {posix.strerror(posix.errno)}")
         elif p == 0:
             logger.trace(&"New child has been spawned")
-            loggerWorker(logger, service, process)
-    else:
-        var pid = process.processID
-        var status: cint
-        var returnCode: int
-        var sig: int
-        var process: Process
-        logger.debug("Switching logs to file")
-        logger.switchToFile()
-        while true:
-            logger.trace(&"Calling waitpid() on {pid}")
-            returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
-            if WIFEXITED(status):
-                sig = 0
-            elif WIFSIGNALED(status):
-                sig = WTERMSIG(status)
-            else:
-                sig = -1
-            logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}, setting sig to {sig}")
-            case service.restart:
-                of Never:
-                    logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
+            streamLoggerWorker(logger, service, process.outputStream)
+    var pid = process.processID
+    var status: cint
+    var returnCode: int
+    var sig: int
+    var process: Process
+    logger.debug("Switching logs to file")
+    logger.switchToFile()
+    while true:
+        logger.trace(&"Calling waitpid() on {pid}")
+        returnCode = posix.waitPid(cint(pid), status, WUNTRACED)
+        if WIFEXITED(status):
+            sig = 0
+        elif WIFSIGNALED(status):
+            sig = WTERMSIG(status)
+        else:
+            sig = -1
+        logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}, setting sig to {sig}")
+        case service.restart:
+            of Never:
+                logger.info(&"Service '{service.name}' ({returnCode}) has exited, shutting down controlling process")
+                break
+            of Always:
+                if sig > 0:
+                    logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+                elif sig == 0:
+                    logger.info(&"Service '{service.name}' has exited gracefully, sleeping {service.restartDelay} seconds before restarting it")
+                else:
+                    logger.info(&"Service '{service.name}' has exited, sleeping {service.restartDelay} seconds before restarting it")
+                removeManagedProcess(pid)
+                sleep(service.restartDelay * 1000)
+                var split = shlex(service.exec)
+                if split.error:
+                    logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
                     break
-                of Always:
-                    if sig > 0:
-                        logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
-                    elif sig == 0:
-                        logger.info(&"Service '{service.name}' has exited gracefully, sleeping {service.restartDelay} seconds before restarting it")
-                    else:
-                        logger.info(&"Service '{service.name}' has exited, sleeping {service.restartDelay} seconds before restarting it")
-                    removeManagedProcess(pid)
-                    sleep(service.restartDelay * 1000)
-                    var split = shlex(service.exec)
-                    if split.error:
-                        logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
-                        break
-                    var arguments = split.words
-                    let progName = arguments[0]
-                    arguments = arguments[1..^1]
-                    process = startProcess(progName, workingDir=service.workDir, args=arguments)
-                    pid = process.processID()
-                of OnFailure:
-                    if sig > 0:
-                        logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
-                    removeManagedProcess(pid)
-                    sleep(service.restartDelay * 1000)
-                    var split = shlex(service.exec)
-                    if split.error:
-                        logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
-                        break
-                    var arguments = split.words
-                    let progName = arguments[0]
-                    arguments = arguments[1..^1]
-                    process = startProcess(progName, workingDir=service.workDir, args=arguments)
-                    pid = process.processID()
-        if process != nil:
-            process.close()
+                var arguments = split.words
+                let progName = arguments[0]
+                arguments = arguments[1..^1]
+                process = startProcess(progName, workingDir=service.workDir, args=arguments)
+                pid = process.processID()
+            of OnFailure:
+                if sig > 0:
+                    logger.info(&"Service '{service.name}' ({returnCode}) has crashed (terminated by signal {sig}: {strsignal(cint(sig))}), sleeping {service.restartDelay} seconds before restarting it")
+                removeManagedProcess(pid)
+                sleep(service.restartDelay * 1000)
+                var split = shlex(service.exec)
+                if split.error:
+                    logger.error(&"Error while restarting service '{service.name}': invalid exec syntax")
+                    break
+                var arguments = split.words
+                let progName = arguments[0]
+                arguments = arguments[1..^1]
+                process = startProcess(progName, workingDir=service.workDir, args=arguments)
+                pid = process.processID()
+    if process != nil:
+        process.close()
 
 
 proc startService(logger: Logger, service: Service) =
@@ -319,7 +317,7 @@ proc startService(logger: Logger, service: Service) =
         var arguments = split.words
         let progName = arguments[0]
         arguments = arguments[1..^1]
-        process = startProcess(progName, workingDir=service.workDir, args=arguments, options=if service.useParentStreams: {poParentStreams} else: {poUsePath, poDaemon, poStdErrToStdOut})
+        process = startProcess(progName, workingDir=service.workDir, args=arguments, options=if service.useParentStreams: {poParentStreams, poStdErrToStdOut} else: {poUsePath, poDaemon, poStdErrToStdOut})
         if service.supervised or service.kind != Oneshot:
             var pid = posix.fork()
             if pid == -1:
@@ -329,7 +327,7 @@ proc startService(logger: Logger, service: Service) =
                 supervisorWorker(logger, service, process)
         # If the service is unsupervised we just spawn the logger worker (assuming it doesn't use poParentStreams)
         if not service.useParentStreams:
-            loggerWorker(logger, service, process)
+            streamLoggerWorker(logger, service, process.outputStream)
     except:
         logger.error(&"Error while starting service '{service.name}': {getCurrentExceptionMsg()}")
 
