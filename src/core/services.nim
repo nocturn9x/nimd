@@ -327,8 +327,9 @@ proc startService(logger: Logger, service: Service) =
             elif pid == 0:
                 logger.trace(&"New child has been spawned")
                 supervisorWorker(logger, service, process)
-        # If the service is unsupervised we just spawn the logger worker
-        loggerWorker(logger, service, process)
+        # If the service is unsupervised we just spawn the logger worker (assuming it doesn't use poParentStreams)
+        if not service.useParentStreams:
+            loggerWorker(logger, service, process)
     except:
         logger.error(&"Error while starting service '{service.name}': {getCurrentExceptionMsg()}")
 
