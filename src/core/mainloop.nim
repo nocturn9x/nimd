@@ -23,12 +23,13 @@ import shutdown
 
 
 
-proc mainLoop*(logger: Logger, workers: int = 1) =
+proc mainLoop*(logger: Logger, workers: int = 1, startServices: bool = true) =
     ## NimD's main execution loop
-    logger.info("Processing default runlevel")
-    startServices(logger, workers=workers, level=Default)
-    logger.debug(&"Unblocking signals")
-    unblockSignals(logger)
+    if startServices:
+        logger.info("Processing default runlevel")
+        startServices(logger, workers=workers, level=Default)
+        logger.debug(&"Unblocking signals")
+        unblockSignals(logger)
     logger.info("System initialization complete, idling on control socket")
     var opType: string
     try:
@@ -37,10 +38,12 @@ proc mainLoop*(logger: Logger, workers: int = 1) =
         serverSocket.listen(5)
         var clientSocket = newSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
         logger.switchToFile()
+        logger.debug("Entering accept() loop")
         while true:
             serverSocket.accept(clientSocket)
+            logger.debug(&"Received connection on control socket")
             if clientSocket.recv(opType, size=1) == 0:
-                logger.debug(&"Client has disconnected, waiting for new connection")
+                logger.debug(&"Client has disconnected, waiting for new connections")
                 continue
             logger.debug(&"Received operation type '{opType}' via control socket")
             # The operation type is a single byte:
@@ -68,4 +71,4 @@ proc mainLoop*(logger: Logger, workers: int = 1) =
         logger.critical(&"A critical error has occurred while running, restarting the mainloop in 30 seconds! Error -> {getCurrentExceptionMsg()}")
         sleepSeconds(30)
         # We *absolutely* cannot die
-        mainLoop(logger)
+        mainLoop(logger, startServices=false)

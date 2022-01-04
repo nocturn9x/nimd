@@ -31,7 +31,7 @@ type ShutdownHandler* = ref object
     body*: proc (logger: Logger, code: int)
 
 
-const reboot_codes = {"poweroff": 0x4321fedc'i64, "restart": 0x01234567'i64, "halt": 0xcdef0123}.toTable()
+const reboot_codes = {"poweroff": 0x4321fedc'i64, "reboot": 0x01234567'i64, "halt": 0xcdef0123}.toTable()
 
 
 proc newShutdownHandler*(body: proc (logger: Logger, code: int)): ShutdownHandler =
