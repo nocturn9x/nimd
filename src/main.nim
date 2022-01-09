@@ -17,7 +17,7 @@ import posix
 import os
 
 # NimD's own stuff
-import util/[logging, constants, misc]
+import util/[logging, constants, misc, config]
 import core/[mainloop, fs, shutdown, services]
 
 
@@ -40,8 +40,7 @@ proc addStuff =
     addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
     addDirectory(newDirectory("test", 764))           # Should create a directory
     addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
-    # Shutdown handler to unmount disks
-    addShutdownHandler(newShutdownHandler(unmountAllDisks))
+
     # Adds test services
     var echoer = newService(name="echoer", description="prints owo", exec="/bin/echo owoooooooooo",
                             runlevel=Boot, kind=Simple, workDir=getCurrentDir(),
@@ -67,10 +66,11 @@ proc addStuff =
 
 
 
-proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab", setHostname: bool = true, workerCount: int = 1) =
+proc main(logger: Logger, config: NimDConfig) =
     ## NimD's entry point and setup
     ## function
-    setStdIoUnbuffered()   # Colors and output synchronization don't work otherwise
+    logger.debug(&"Setting log file to '{config.logFile}'")
+    setLogFile(file=config.logFile)
     logger.debug("Starting NimD: A minimal, self-contained, dependency-based Linux init system written in Nim")
     logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
     logger.trace("Calling getCurrentProcessId()")
@@ -86,7 +86,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab",
         nimDExit(logger, EPERM, emerg=false)   # EPERM - Operation not permitted
     logger.trace("Setting up signal handlers")
     onSignal(SIGABRT, SIGALRM, SIGHUP, SIGILL, SIGKILL, SIGQUIT, SIGSTOP, SIGSEGV, SIGTSTP,
-            SIGTRAP, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGTERM, SIGINT):  # 6 is SIGIOT
+             SIGTRAP, SIGPIPE, SIGUSR1, SIGUSR2, 6, SIGFPE, SIGBUS, SIGURG, SIGTERM, SIGINT):  # 6 is SIGIOT
         # Can't capture local variables because this implicitly generates
         # a noconv procedure, so we use getDefaultLogger() instead
         getDefaultLogger().warning(&"Ignoring signal {sig} ({strsignal(sig)})")  # Nim injects the variable "sig" into the scope. Gotta love those macros
@@ -94,11 +94,15 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab",
         # One of the key features of an init system is reaping child
         # processes!
         reapProcess(getDefaultLogger())
+    if config.autoUnmount:
+        logger.debug("Setting up shutdown handler for automatic disk unmounting")
+        # Shutdown handler to unmount disks
+        addShutdownHandler(newShutdownHandler(unmountAllDisks))
     addStuff()
     try:
-        if mountDisks:
+        if config.autoMount:
             logger.info("Mounting filesystem")
-            mountDisks(logger, fstab)
+            mountDisks(logger, config.fstab)
         else:
             logger.info("Skipping disk mounting, assuming this has already been done")
         logger.info("Creating symlinks")
@@ -111,7 +115,7 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab",
     except:
         logger.fatal(&"A fatal error has occurred while preparing filesystem, booting cannot continue. Error -> {getCurrentExceptionMsg()}")
         nimDExit(logger, 131, emerg=false)
-    if setHostname:
+    if config.setHostname:
         logger.info("Setting hostname")
         logger.debug(&"Hostname was set to '{misc.setHostname(logger)}'")
     else:
@@ -119,9 +123,9 @@ proc main(logger: Logger, mountDisks: bool = true, fstab: string = "/etc/fstab",
     logger.debug("Entering critical fork() section: blocking signals")
     blockSignals(logger)   # They are later unblocked in mainLoop
     logger.info("Processing boot runlevel")
-    startServices(logger, workers=workerCount, level=Boot)
+    startServices(logger, workers=config.workers, level=Boot)
     logger.debug("Starting main loop")
-    mainLoop(logger, workers=workerCount)
+    mainLoop(logger, config)
 
 
 when isMainModule:
@@ -167,9 +171,10 @@ when isMainModule:
             else:
                 echo "Usage: nimd [options]"
                 quit(EINVAL) # EINVAL - Invalid argument
-    logger.debug("Calling NimD entry point")
+
+    setStdIoUnbuffered()   # Colors don't work otherwise!
     try:
-        main(logger)
+        main(logger, parseConfig(logger, "/etc/nimd/nimd.conf"))
     except:
         logger.fatal(&"A fatal unrecoverable error has occurred during startup and NimD cannot continue: {getCurrentExceptionMsg()}")
         nimDExit(logger, 131)  # ENOTRECOVERABLE - State not recoverable

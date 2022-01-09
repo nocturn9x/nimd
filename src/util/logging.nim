@@ -46,7 +46,13 @@ var defaultLevel = LogLevel.Info
 var logFile = "/var/log/nimd"
 var logToFileOnly: bool = false
 
-## This mess is needed to make sure stderr writes are mostly atomic. Sort of
+
+proc setLogFile*(file: string) =
+    # Sets the log file
+    logFile = file
+
+
+## This mess is needed to make sure stderr writes are mostly atomic. Sort of.
 ## No error handling yet. Deal with it
 var customStderrFd = dup(stderr.getFileHandle())
 discard dup3(stderr.getFileHandle(), customStderrFd, O_APPEND)

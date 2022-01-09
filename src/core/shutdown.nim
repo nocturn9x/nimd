@@ -39,7 +39,12 @@ proc newShutdownHandler*(body: proc (logger: Logger, code: int)): ShutdownHandle
 
 
 var shutdownHandlers: seq[ShutdownHandler] = @[]
-var sigTermDelay: float = 10.0
+var sigTermDelay: float = 90
+
+
+proc setSigTermDelay*(delay: int = 90) =
+    # Sets the sigtermDelay variable
+    sigTermDelay = float(delay)
 
 
 proc addShutdownHandler*(handler: ShutdownHandler) =
@@ -90,7 +95,7 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
         # We're in emergency mode: do not crash the kernel, spawn a shell and exit
         logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
         logger.info("Terminating child processes with SIGKILL")
-        discard execCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
+        discard execCmd(os.getEnv("SHELL", "/bin/sh"))  # TODO: Is this fine? maybe use execProcess
         discard posix.kill(-1, SIGKILL)
         quit(-1)
     logger.warning("The system is shutting down")
@@ -113,7 +118,7 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     if anyUserlandProcessLeft():
         logger.info("Terminating child processes with SIGKILL")
         discard posix.kill(-1, SIGKILL)
-    logger.warning("Shutdown procedure complete, sending final termination signal")
+    logger.warning("Shutdown procedure complete, NimD is exiting")
 
 
 proc reboot*(logger: Logger) =

@@ -16,18 +16,18 @@ import os
 import net
 
 
-import ../util/[logging, misc]
+import ../util/[logging, misc, config]
 import services
 import control
 import shutdown
 
 
 
-proc mainLoop*(logger: Logger, workers: int = 1, startServices: bool = true) =
+proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
     ## NimD's main execution loop
     if startServices:
         logger.info("Processing default runlevel")
-        startServices(logger, workers=workers, level=Default)
+        startServices(logger, workers=config.workers, level=Default)
         logger.debug(&"Unblocking signals")
         unblockSignals(logger)
     logger.info("System initialization complete, idling on control socket")
@@ -68,7 +68,7 @@ proc mainLoop*(logger: Logger, workers: int = 1, startServices: bool = true) =
                     discard
             clientSocket.close()
     except:
-        logger.critical(&"A critical error has occurred while running, restarting the mainloop in 30 seconds! Error -> {getCurrentExceptionMsg()}")
-        sleepSeconds(30)
+        logger.critical(&"A critical error has occurred while running, restarting the mainloop in {config.restartDelay} seconds! Error -> {getCurrentExceptionMsg()}")
+        sleepSeconds(config.restartDelay)
         # We *absolutely* cannot die
-        mainLoop(logger, startServices=false)
+        mainLoop(logger, config, startServices=false)

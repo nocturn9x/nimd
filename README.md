@@ -58,7 +58,6 @@ want to make sure your disks are mounted and that your network has been set up. 
 
 ```
 [Service]
-
 name         = ssh                    # The name of the service
 description  = Secure Shell Server    # A short description
 type         = simple                 # Other option: oneshot (i.e. runs only once, implies supervised=false)
@@ -70,7 +69,6 @@ restartDelay = 10                     # NimD will wait this many seconds before 
 supervised   = true                   # This is the default. Disable it if you don't need NimD to watch for it
 
 [Logging]
-
 stderr = /var/log/sshd     # Path of the stderr log for the service
 stdout = /var/log/sshd     # Path of the stdout log for the service
 stdin  = /dev/null         # Path of the stdin fd for the service
@@ -99,20 +97,22 @@ INI-like structure), but the options are obviously different. An example config 
 
 ```
 [Logging]
-
 level   = info            # Levels are: trace, debug, info, warning, error, critical, fatal
 logFile = /var/log/nimd   # Path to log file
 
 [Filesystem]
-
-autoMount      = true                                    # Automatically parses /etc/fstab and mounts disks
-autoUnmount    = true                                    # Automatically parses /proc/mounts and unmounts everything on shutdown
-fstabPath      = /etc/fstab                              # Path to your system's fstab (defaults to /etc/fstab)
-createDirs     = /path/to/dir1, /path/to/dir2            # Creates these directories on boot. Empty to disable
-createSymlinks = /path/to/symlink:/path/to/dest, ...     # Creates these symlinks on boot. Empty to disable
+autoMount      = true                                      # Automatically parses /etc/fstab and mounts disks
+autoUnmount    = true                                      # Automatically parses /proc/mounts and unmounts everything on shutdown
+fstabPath      = /etc/fstab                                # Path to your system's fstab (defaults to /etc/fstab)
+createDirs     = "/path/to/dir:perms,"                     # Creates these directories with the given permissions on boot. Empty to disable
+createSymlinks = "/path/to/symlink:/path/to/dest,"         # Creates these symlinks on boot. Empty to disable
 
 [Misc]
-
 controlSocket        = /var/run/nimd.sock    # Path to the Unix domain socket to create for IPC
-onDependencyConflict = skip                  # Other option: warn, error                   
+setHostname          = true                  # Set to true to set the machine's hostname automatically from /etc/hostname
+onDependencyConflict = skip                  # Other option: warn, error  
+workers              = 1                     # Number of worker processes to use when spawning services
+restartDelay         = 10                    # Delay (seconds) that nimd will wait before restarting itself after crashes
+sigtermDelay         = 90                    # Delay (seconds) that nimd will wait before terminating child processes with
+                                             # SIGKILL after sending a more gentle SIGTERM upon shutdown or exit              
 ```
