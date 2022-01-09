@@ -91,6 +91,8 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     ## as cleanly as possible. When emerg equals true, it will
     ## try to spawn a root shell and exit
     logger.switchToConsole()
+    logger.info("Syncing file systems")
+    logger.debug(&"Calling sync() syscall has returned {syscall(SYNC)}")
     if emerg:
         # We're in emergency mode: do not crash the kernel, spawn a shell and exit
         logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
