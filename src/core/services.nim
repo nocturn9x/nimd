@@ -63,6 +63,9 @@ type
         depends: seq[Dependency]
         provides: seq[Dependency]
         useParentStreams: bool
+        stdin: string
+        stdout: string
+        stderr: string
         ## These two fields are
         ## used by the dependency
         ## resolver
@@ -77,11 +80,12 @@ proc newDependency*(kind: DependencyKind, provider: Service): Dependency =
 
 
 proc newService*(name, description: string, kind: ServiceKind, workDir: string, runlevel: RunLevel, exec: string, supervised: bool, restart: RestartKind,
-                 restartDelay: int, depends, provides: seq[Dependency], useParentStreams: bool = false): Service =
+                 restartDelay: int, depends, provides: seq[Dependency], useParentStreams: bool = false, stdin, stdout, stderr: string): Service =
     ## Creates a new service object
     result = Service(name: name, description: description, kind: kind, workDir: workDir, runLevel: runLevel,
                      exec: exec, supervised: supervised, restart: restart, restartDelay: restartDelay, 
-                     depends: depends, provides: provides, isMarked: false, isResolved: false, useParentStreams: useParentStreams)
+                     depends: depends, provides: provides, isMarked: false, isResolved: false, useParentStreams: useParentStreams,
+                     stdin: stdin, stdout: stdout, stderr: stderr)
     result.provides.add(newDependency(Other, result))
 
 

@@ -68,6 +68,7 @@ provides     = ssh                    # Dependents can also be providers
 restart      = always                 # Other options are: never, onFailure
 restartDelay = 10                     # NimD will wait this many seconds before trying to start it again
 supervised   = true                   # This is the default. Disable it if you don't need NimD to watch for it
+workDir      = /usr/bin               # The service's working directory 
 
 [Logging]
 

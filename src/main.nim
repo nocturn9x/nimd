@@ -46,23 +46,26 @@ proc addStuff =
     var echoer = newService(name="echoer", description="prints owo", exec="/bin/echo owoooooooooo",
                             runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
                             supervised=false, restart=Never, restartDelay=0,
-                            depends=(@[]), provides=(@[]))
+                            depends=(@[]), provides=(@[]), stdin="/dev/null", stderr="", stdout="")
     var errorer = newService(name="errorer", description="la mamma di gavd", 
                          exec="/bin/false", supervised=true, restart=OnFailure,
                          restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
-                         depends=(@[newDependency(Other, echoer)]), provides=(@[]))
+                         depends=(@[newDependency(Other, echoer)]), provides=(@[]),
+                         stdin="/dev/null", stderr="", stdout="")
     var test = newService(name="broken", description="", exec="/bin/echo owo",
                             runlevel=Boot, kind=Oneshot, workDir=getCurrentDir(),
                             supervised=false, restart=Never, restartDelay=0,
-                            depends=(@[newDependency(Other, echoer)]), provides=(@[]))
+                            depends=(@[newDependency(Other, echoer)]), provides=(@[]),
+                            stdin="/dev/null", stderr="", stdout="")
     var exiter = newService(name="exiter", description="la mamma di licenziat", 
                           exec="/bin/true", supervised=true, restart=Always,
                           restartDelay=5, runlevel=Boot, workDir="/", kind=Simple,
-                          depends=(@[newDependency(Other, errorer)]), provides=(@[]))
+                          depends=(@[newDependency(Other, errorer)]), provides=(@[]),
+                          stdin="/dev/null", stderr="", stdout="")
     var shell = newService(name="login", description="A simple login shell", kind=Simple,
-                           getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
+                           workDir=getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
                            supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[]),
-                           useParentStreams=true
+                           useParentStreams=true, stdin="/dev/null", stderr="", stdout=""
                            )
     addService(errorer)
     addService(echoer)
