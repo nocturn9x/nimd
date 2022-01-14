@@ -18,6 +18,8 @@ import glob
 import strutils
 import strformat
 import times
+import tables
+import syscall
 
 
 import ../util/logging
@@ -29,12 +31,20 @@ type ShutdownHandler* = ref object
     body*: proc (logger: Logger, code: int)
 
 
+const reboot_codes = {"poweroff": 0x4321fedc'i64, "reboot": 0x01234567'i64, "halt": 0xcdef0123}.toTable()
+
+
 proc newShutdownHandler*(body: proc (logger: Logger, code: int)): ShutdownHandler =
     result = ShutdownHandler(body: body)
 
 
 var shutdownHandlers: seq[ShutdownHandler] = @[]
-var sigTermDelay: float = 10.0
+var sigTermDelay: float = 90
+
+
+proc setSigTermDelay*(delay: int = 90) =
+    # Sets the sigtermDelay variable
+    sigTermDelay = float(delay)
 
 
 proc addShutdownHandler*(handler: ShutdownHandler) =
@@ -80,16 +90,19 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     ## NimD's exit point. This function tries to shut down
     ## as cleanly as possible. When emerg equals true, it will
     ## try to spawn a root shell and exit
+    logger.switchToConsole()
+    logger.info("Syncing file systems")
+    logger.debug(&"Calling sync() syscall has returned {syscall(SYNC)}")
     if emerg:
         # We're in emergency mode: do not crash the kernel, spawn a shell and exit
         logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
         logger.info("Terminating child processes with SIGKILL")
-        discard execCmd("/bin/sh")  # TODO: Is this fine? maybe use execProcess
+        discard execCmd(os.getEnv("SHELL", "/bin/sh"))  # TODO: Is this fine? maybe use execProcess
         discard posix.kill(-1, SIGKILL)
         quit(-1)
     logger.warning("The system is shutting down")
     logger.info("Processing shutdown runlevel")
-    startServices(logger, Shutdown)
+    startServices(logger, RunLevel.Shutdown)
     logger.info("Running shutdown handlers")
     try:
         for handler in shutdownHandlers:
@@ -107,5 +120,31 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
     if anyUserlandProcessLeft():
         logger.info("Terminating child processes with SIGKILL")
         discard posix.kill(-1, SIGKILL)
-    logger.warning("Shutdown procedure complete, sending final termination signal")
-    quit(code)
+    logger.warning("Shutdown procedure complete, NimD is exiting")
+
+
+proc reboot*(logger: Logger) =
+    ## Reboots the system
+    logger.debug("Switching logs to console")
+    logger.switchToConsole()
+    logger.info("The system is rebooting")
+    nimDExit(logger, 0, emerg=false)
+    discard syscall(REBOOT, 0xfee1dead, 537993216, reboot_codes["reboot"])
+
+
+proc shutdown*(logger: Logger) =
+    ## Shuts the system off
+    logger.debug("Switching logs to console")
+    logger.switchToConsole()
+    logger.info("The system is powering off")
+    nimDExit(logger, 0, emerg=false)
+    discard syscall(REBOOT, 0xfee1dead, 537993216, reboot_codes["poweroff"])
+
+
+proc halt*(logger: Logger) =
+    ## Halts the system
+    logger.debug("Switching logs to console")
+    logger.switchToConsole()
+    logger.info("The system is halting")
+    nimDExit(logger, 0, emerg=false)
+    discard syscall(REBOOT, 0xfee1dead, 537993216, reboot_codes["halt"])

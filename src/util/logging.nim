@@ -38,9 +38,26 @@ type
         level*: LogLevel
         handlers*: seq[LogHandler]
 
+
+proc dup3(a1, a2, a3: cint): cint {.importc.}
+
+
 var defaultLevel = LogLevel.Info
 var logFile = "/var/log/nimd"
 var logToFileOnly: bool = false
+
+
+proc setLogFile*(file: string) =
+    # Sets the log file
+    logFile = file
+
+
+## This mess is needed to make sure stderr writes are mostly atomic. Sort of.
+## No error handling yet. Deal with it
+var customStderrFd = dup(stderr.getFileHandle())
+discard dup3(stderr.getFileHandle(), customStderrFd, O_APPEND)
+var customStderr: File
+discard open(customStderr, customStderrFd, fmAppend)
 
 
 proc log(self: Logger, level: LogLevel = defaultLevel, message: string)  # Forward declaration
@@ -79,132 +96,91 @@ proc log(self: Logger, level: LogLevel = defaultLevel, message: string) =
 # Do NOT touch the alignment offsets or your console output and logs will look like trash
 
 
-proc lockFile(logger: Logger, handle: File) =
-    ## Locks the given file across the whole system for writing using fcntl()
-    if fcntl(handle.getFileHandle(), F_WRLCK) == -1:
-         setForegroundColor(fgRed)
-         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] Error while locking handle (code {posix.errno}, {posix.strerror(posix.errno)}): output may be mangled""")
-         setForegroundColor(fgDefault)
-
-
-proc unlockFile(logger: Logger, handle: File) =
-    ## Unlocks the given file across the whole system for writing using fcntl()
-    if fcntl(handle.getFileHandle(), F_UNLCK) == -1:
-         setForegroundColor(fgRed)
-         stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] Error while unlocking handle (code {posix.errno}, {posix.strerror(posix.errno)}): output may be missing""")
-         setForegroundColor(fgDefault)
-
 
 proc logTraceStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgMagenta)
-    stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} TRACE {"-":>3} ({posix.getpid():03})] {message}""")
+    customStderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} TRACE {"-":>3} ({posix.getpid():03})] {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
 
 
 proc logDebugStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgCyan)
-    stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} DEBUG {"-":>3} ({posix.getpid():03})] {message}""")
+    customStderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} DEBUG {"-":>3} ({posix.getpid():03})] {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
 
 
 proc logInfoStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgGreen)
-    stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} INFO {"-":>4} ({posix.getpid():03})] {message}""")
+    customStderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} INFO {"-":>4} ({posix.getpid():03})] {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
 
 
 proc logWarningStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgYellow)
-    stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} WARNING {"-":>1} ({posix.getpid():03})] {message}""")
+    customStderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} WARNING {"-":>1} ({posix.getpid():03})] {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
 
 
 proc logErrorStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgRed)
-    stderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] {message}""")
+    customStderr.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
-
+    
 
 proc logCriticalStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgYellow)
     setBackgroundColor(bgRed)
-    stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<4} {"-":>1} CRITICAL {"-":>2} ({posix.getpid():03})]""")
+    customStderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<4} {"-":>1} CRITICAL {"-":>2} ({posix.getpid():03})]""")
     setBackgroundColor(bgDefault)
-    stderr.writeLine(&""" {message}""")
+    customStderr.writeLine(&""" {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
-
+    
 
 proc logFatalStderr(self: LogHandler, logger: Logger, message: string) =
-    logger.lockFile(stderr)
     setForegroundColor(fgBlack)
     setBackgroundColor(bgRed)
-    stderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<5} {"-":>1} {"":>1} FATAL {"-":>3} ({posix.getpid():03})]""")
+    customStderr.write(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<5} {"-":>1} {"":>1} FATAL {"-":>3} ({posix.getpid():03})]""")
     setForegroundColor(fgRed)
     setBackgroundColor(bgDefault)
-    stderr.writeline(&""" {message}""")
+    customStderr.writeline(&""" {message}""")
     setForegroundColor(fgDefault)
-    logger.unlockFile(stderr)
     
 
 proc logTraceFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} TRACE {"-":>3} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
-
+    
 
 proc logDebugFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} DEBUG {"-":>3} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
-
+    
 
 proc logInfoFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} INFO {"-":>4} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
-
+    
 
 proc logWarningFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} WARNING {"-":>1} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
 
 
 proc logErrorFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<10} {"-":>1} {"":>1} ERROR {"-":>3} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
+    
 
 
 proc logCriticalFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<4} {"-":>1} CRITICAL {"-":>2} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
-
+    
 
 proc logFatalFile(self: LogHandler, logger: Logger, message: string) =
     var self = StreamHandler(self)
-    logger.lockFile(self.file)
     self.file.writeLine(&"""[{fromUnix(getTime().toUnixFloat().int).format("d/M/yyyy HH:mm:ss"):<5} {"-":>1} {"":>1} FATAL {"-":>3} ({posix.getpid():03})] {message}""")
-    logger.unlockFile(self.file)
+    
 
 
 proc switchToFile*(self: Logger) =

@@ -1,12 +1,11 @@
 from macros import error
-from ospaths import splitFile, `/`
+from os import splitFile, `/`
 
 # -d:musl
 when defined(musl):
   var muslGccPath: string
   echo "  [-d:musl] Building a static binary using musl .."
   muslGccPath = findExe("musl-gcc")
-  # echo "debug: " & muslGccPath
   if muslGccPath == "":
     error("'musl-gcc' binary was not found in PATH.")
   switch("gcc.exe", muslGccPath)
@@ -15,7 +14,7 @@ when defined(musl):
 
 
 proc binOptimize(binFile: string) =
-  ## Optimize size of the ``binFile`` binary.
+  ## Optimize size of the binFile binary.
   echo ""
   if findExe("strip") != "":
     echo "Running 'strip -s' .."
@@ -36,11 +35,10 @@ task musl, "Builds an optimized static binary using musl":
       "\n  Usage Example: nim musl FILE.nim.")
 
   let
-    nimFile = paramStr(numParams) ## The nim file name *must* be the last.
+    nimFile = paramStr(numParams) ## The nim file name *must* be the last
     (dirName, baseName, _) = splitFile(nimFile)
     binFile = dirName / baseName  # Save the binary in the same dir as the nim file
-    nimArgs = "c -d:musl -d:release --opt:size " & nimFile
-  # echo "[debug] nimFile = " & nimFile & ", binFile = " & binFile
+    nimArgs = "c -d:musl -d:release --opt:size --gc:orc" & nimFile
 
   # Build binary
   echo "\nRunning 'nim " & nimArgs & "' .."
