@@ -34,7 +34,7 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
     var opType: string
     try:
         logger.trace("Calling initControlSocket()")
-        var serverSocket = initControlSocket(logger)
+        var serverSocket = initControlSocket(logger, config.sock)
         serverSocket.listen(5)
         var clientSocket = newSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
         logger.switchToFile()
@@ -62,7 +62,11 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
                     logger.info("Received halt request")
                     halt(logger)
                 of "s":
-                    discard  # TODO
+                    logger.info("Received service request")
+                    # TODO: Operate on services
+                of "l":
+                    logger.info("Received reload request")
+                    mainLoop(logger, parseConfig(logger, "/etc/nimd/nimd.conf"), startServices=false)
                 else:
                     logger.warning(&"Received unknown operation type '{opType}' via control socket, ignoring it")
                     discard

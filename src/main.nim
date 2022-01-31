@@ -25,21 +25,22 @@ proc addStuff =
     ## Adds stuff to test NimD. This is
     ## a temporary procedure
     
+    ## Note: Commented because the config file now does this work!
     # Adds symlinks
-    addSymlink(newSymlink(dest="/dev/fd", source="/proc/self/fd"))
-    addSymlink(newSymlink(dest="/dev/fd/0", source="/proc/self/fd/0"))
-    addSymlink(newSymlink(dest="/dev/fd/1", source="/proc/self/fd/1"))
-    addSymlink(newSymlink(dest="/dev/fd/2", source="/proc/self/fd/2"))
-    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))
-    addSymlink(newSymlink(dest="/dev/std/out", source="/proc/self/fd/1"))
-    addSymlink(newSymlink(dest="/dev/std/err", source="/proc/self/fd/2"))
-    # Tests here. Check logging output (debug) to see if
-    # they work as intended
-    addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
-    addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Should say destination does not exist
-    addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
-    addDirectory(newDirectory("test", 764))           # Should create a directory
-    addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
+    # addSymlink(newSymlink(dest="/dev/fd", source="/proc/self/fd"))
+    # addSymlink(newSymlink(dest="/dev/fd/0", source="/proc/self/fd/0"))
+    # addSymlink(newSymlink(dest="/dev/fd/1", source="/proc/self/fd/1"))
+    # addSymlink(newSymlink(dest="/dev/fd/2", source="/proc/self/fd/2"))
+    # addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))
+    # addSymlink(newSymlink(dest="/dev/std/out", source="/proc/self/fd/1"))
+    # addSymlink(newSymlink(dest="/dev/std/err", source="/proc/self/fd/2"))
+    # # Tests here. Check logging output (debug) to see if
+    # # they work as intended
+    # addSymlink(newSymlink(dest="/dev/std/err", source="/"))                # Should say link already exists and points to /proc/self/fd/2
+    # addSymlink(newSymlink(dest="/dev/std/in", source="/does/not/exist"))   # Should say destination does not exist
+    # addSymlink(newSymlink(dest="/dev/std/in", source="/proc/self/fd/0"))   # Should say link already exists
+    # addDirectory(newDirectory("test", 764))           # Should create a directory
+    # addDirectory(newDirectory("/dev/disk", 123))      # Should say directory already exists
 
     # Adds test services
     var echoer = newService(name="echoer", description="prints owo", exec="/bin/echo owoooooooooo",
