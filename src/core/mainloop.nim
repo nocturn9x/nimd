@@ -51,6 +51,7 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
             # - 'r' -> reboot
             # - 'h' -> halt
             # - 's' -> Services-related operations (start, stop, get status, etc.)
+            # - 'l' -> Reload in-memory configuration
             case opType:
                 of "p":
                     logger.info("Received shutdown request")
