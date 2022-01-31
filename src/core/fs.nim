@@ -155,7 +155,7 @@ proc removeDirectory*(directory: Directory) =
 
 
 proc parseFileSystemTable*(fstab: string): seq[Filesystem] =
-    ## Parses the contents of the given filesystem table and returns a Filesystem object.
+    ## Parses the contents of the given filesystem table and returns a list of Filesystem objects.
     ## An improperly formatted or semantically invalid fstab will cause this function to 
     ## error out with a ValueError exception that should be caught by the caller.
     ## No other checks other than very basic syntax are performed, as that job

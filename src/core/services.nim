@@ -108,11 +108,10 @@ proc resolve(logger: Logger, node: Service): seq[Service] =
     ## sorted list such that a service appears in it only
     ## after all of its dependencies and only
     ## before all of its dependents.
-    ## This function also automatically handles
-    ## detached subgraphs, which can occurr if
-    ## one or more dependencies have common
-    ## dependencies/dependents between each other,
-    ## but not with the rest of the graph. Nodes
+    ## This function is called iteratively by resolveDependencies
+    ## to handle detached subgraphs, which can occurr if one or
+    ## more dependencies have common dependencies/dependents between 
+    ## each other, but not with the rest of the graph. Nodes
     ## that have no dependencies nor provide any
     ## service may be located anywhere in the list,
     ## as that does not invalidate the invariants
