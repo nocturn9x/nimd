@@ -188,7 +188,6 @@ proc getManagedProcess*(pid: int): Service =
     ## Returns a managed process by its PID.
     ## Returns nil if the given pid doesn't
     ## belong to a managed process
-    
     result = if pid.isManagedProcess(): processIDs[pid] else: nil
 
 
