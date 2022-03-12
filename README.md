@@ -117,3 +117,8 @@ restartDelay         = 10                    # Delay (seconds) that nimd will wa
 sigtermDelay         = 90                    # Delay (seconds) that nimd will wait before terminating child processes with
                                              # SIGKILL after sending a more gentle SIGTERM upon shutdown or exit              
 ```
+
+## Testing NimD
+
+NimD is not quite ready for production yet, but in the `scripts` folder you can find a few simple bash scripts to test NimD
+in a minimal Alpine Linux VM using QEMU.
