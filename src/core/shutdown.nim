@@ -119,7 +119,6 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
         logger.info("Terminating child processes with SIGKILL")
         discard posix.kill(-1, SIGKILL)
     logger.warning("Shutdown procedure complete, NimD is exiting")
-    quit(-1)
 
 
 proc reboot*(logger: Logger) =

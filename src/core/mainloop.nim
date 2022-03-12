@@ -28,8 +28,8 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
     if startServices:
         logger.info("Processing default runlevel")
         startServices(logger, workers=config.workers, level=Default)
-        logger.debug(&"Unblocking signals")
-        unblockSignals(logger)
+    logger.debug(&"Unblocking signals")
+    unblockSignals(logger)
     logger.info("System initialization complete, idling on control socket")
     var opType: string
     try:
@@ -52,6 +52,7 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
             # - 'h' -> halt
             # - 's' -> Services-related operations (start, stop, get status, etc.)
             # - 'l' -> Reload in-memory configuration
+            # - 'c' -> Check NimD status (returns "1" if up)
             case opType:
                 of "p":
                     logger.info("Received shutdown request")
@@ -63,11 +64,14 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
                     logger.info("Received halt request")
                     halt(logger)
                 of "s":
-                    logger.info("Received service request")
+                    logger.info("Received service-related request")
                     # TODO: Operate on services
                 of "l":
                     logger.info("Received reload request")
                     mainLoop(logger, parseConfig(logger, "/etc/nimd/nimd.conf"), startServices=false)
+                of "c":
+                    logger.info("Received check request, responding")
+                    clientSocket.send("1")
                 else:
                     logger.warning(&"Received unknown operation type '{opType}' via control socket, ignoring it")
                     discard
