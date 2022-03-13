@@ -61,7 +61,7 @@ proc addStuff =
     var shell = newService(name="login", description="A simple login shell", kind=Simple,
                            workDir=getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
                            supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[]),
-                           useParentStreams=true, stdin="/dev/null", stderr="", stdout=""
+                           useParentStreams=true, stdin="/dev/null", stderr="/proc/self/fd/2", stdout="/proc/self/fd/1"
                            )
     addService(errorer)
     addService(echoer)
