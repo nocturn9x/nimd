@@ -112,4 +112,4 @@ if ! [[ $memory -eq "" ]]
    qemumem="-m ${memory}"
 fi
 
-qemu-system-x86_64 -net nic,model=virtio,netdev=user.0 -netdev user,id=user.0 -drive file=vm.qcow2,if=virtio -enable-kvm -kernel ${kernel} -initrd ${initrd} ${qemumem}  -append 'root=/dev/vda1 rw quiet modules=ext4 console=ttyS0,9600 console=ttyS0 init=/bin/nimd'
+qemu-system-x86_64 -net nic,model=virtio,netdev=user.0 -netdev user,id=user.0 -drive file=vm.qcow2,if=virtio -enable-kvm -kernel ${kernel} -initrd ${initrd} ${qemumem}  -append 'root=/dev/vda1 rw quiet modules=ext4 console=ttyS0 init=/bin/nimd'

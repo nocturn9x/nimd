@@ -59,7 +59,7 @@ proc addStuff =
                           depends=(@[newDependency(Other, errorer)]), provides=(@[]),
                           stdin="/dev/null", stderr="", stdout="")
     var shell = newService(name="login", description="A simple login shell", kind=Simple,
-                           workDir=getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
+                           workDir=getCurrentDir(), runlevel=Default, exec="/bin/login -f root",
                            supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[]),
                            useParentStreams=true, stdin="/dev/null", stderr="/proc/self/fd/2", stdout="/proc/self/fd/1"
                            )
@@ -74,8 +74,12 @@ proc checkControlSocket(logger: Logger, config: NimDConfig): bool =
     ## socket
     result = true
     var stat_result: Stat
-    if posix.stat(cstring(config.sock), stat_result) == -1:
+    if posix.stat(cstring(config.sock), stat_result) == -1 and posix.errno != 2:
         logger.warning(&"Could not stat() {config.sock}, assuming NimD instance isn't running")
+    elif posix.errno == 2:
+        logger.debug(&"Control socket path is clear, starting up")
+        posix.errno = 0
+        # 2 is ENOENT, which means the file does not exist
     # I stole this from /usr/lib/python3.10/stat.py
     elif (int(stat_result.st_mode) and 0o170000) != 0o140000:
         logger.fatal(&"{config.sock} exists and is not a socket")
