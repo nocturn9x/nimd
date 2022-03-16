@@ -32,14 +32,12 @@ type ShutdownHandler* = ref object
 
 
 const reboot_codes = {"poweroff": 0x4321fedc'i64, "reboot": 0x01234567'i64, "halt": 0xcdef0123}.toTable()
+var shutdownHandlers: seq[ShutdownHandler] = @[]
+var sigTermDelay: float = 90
 
 
 proc newShutdownHandler*(body: proc (logger: Logger, code: int)): ShutdownHandler =
     result = ShutdownHandler(body: body)
-
-
-var shutdownHandlers: seq[ShutdownHandler] = @[]
-var sigTermDelay: float = 90
 
 
 proc setSigTermDelay*(delay: int = 90) =
@@ -97,8 +95,8 @@ proc nimDExit*(logger: Logger, code: int, emerg: bool = true) =
         # We're in emergency mode: do not crash the kernel, spawn a shell and exit
         logger.fatal("NimD has entered emergency mode and cannot continue. You will be now (hopefully) dropped in a root shell: you're on your own. May the force be with you")
         logger.info("Terminating child processes with SIGKILL")
-        discard execCmd(os.getEnv("SHELL", "/bin/sh"))  # TODO: Is this fine? maybe use execProcess
         discard posix.kill(-1, SIGKILL)
+        discard execCmd(os.getEnv("SHELL", "/bin/sh"))  # TODO: Is this fine? maybe use execProcess
         quit(-1)
     logger.warning("The system is shutting down")
     logger.info("Processing shutdown runlevel")

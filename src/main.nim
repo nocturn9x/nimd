@@ -14,6 +14,7 @@
 import parseopt
 import strformat
 import posix
+import net
 import os
 
 # NimD's own stuff
@@ -58,9 +59,9 @@ proc addStuff =
                           depends=(@[newDependency(Other, errorer)]), provides=(@[]),
                           stdin="/dev/null", stderr="", stdout="")
     var shell = newService(name="login", description="A simple login shell", kind=Simple,
-                           workDir=getCurrentDir(), runlevel=Boot, exec="/bin/login -f root",
+                           workDir=getCurrentDir(), runlevel=Default, exec="/bin/login -f root",
                            supervised=true, restart=Always, restartDelay=0, depends=(@[]), provides=(@[]),
-                           useParentStreams=true, stdin="/dev/null", stderr="", stdout=""
+                           useParentStreams=true, stdin="/dev/null", stderr="/proc/self/fd/2", stdout="/proc/self/fd/1"
                            )
     addService(errorer)
     addService(echoer)
@@ -68,10 +69,55 @@ proc addStuff =
     addService(shell)
 
 
+proc checkControlSocket(logger: Logger, config: NimDConfig): bool =
+    ## Performs some startup checks on nim's control
+    ## socket
+    result = true
+    var stat_result: Stat
+    if posix.stat(cstring(config.sock), stat_result) == -1 and posix.errno != 2:
+        logger.warning(&"Could not stat() {config.sock}, assuming NimD instance isn't running")
+    elif posix.errno == 2:
+        logger.debug(&"Control socket path is clear, starting up")
+        posix.errno = 0
+        # 2 is ENOENT, which means the file does not exist
+    # I stole this from /usr/lib/python3.10/stat.py
+    elif (int(stat_result.st_mode) and 0o170000) != 0o140000:
+        logger.fatal(&"{config.sock} exists and is not a socket")
+        result = false
+    elif dirExists(config.sock):
+        logger.info("Control socket path is a directory, appending nimd.sock to it")
+        config.sock = config.sock.joinPath("nimd.sock")
+    else:
+        logger.debug("Trying to reach current NimD instance")
+        var sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP)
+        try:
+            sock.connectUnix(config.sock)
+            logger.info("Control socket already exists, trying to reach current NimD instance")
+        except OSError:
+            logger.warning(&"Could not connect to control socket at {config.sock} ({getCurrentExceptionMsg()}), assuming NimD instance isn't running")
+            try:
+                removeFile(config.sock)
+            except OSError:
+                logger.warning(&"Could not delete dangling control socket at {config.sock} ({getCurrentExceptionMsg()})")
+        if sock.trySend("c"):
+            try:
+                if sock.recv(1, timeout=5) == "1":
+                    logger.error("Another NimD instance is running! Exiting")
+                    result = false
+            except OSError:
+                logger.warning(&"Could not read from control socket at {config.sock} ({getCurrentExceptionMsg()}), assuming NimD instance isn't running")
+            except TimeoutError:
+                logger.warning(&"Could not read from control socket at {config.sock} ({getCurrentExceptionMsg()}), assuming NimD instance isn't running")
+        else:
+            logger.fatal(&"Could not write on control socket at {config.sock}")
+            result = false
+
 
 proc main(logger: Logger, config: NimDConfig) =
     ## NimD's entry point and setup
     ## function
+    if not checkControlSocket(logger, config):
+        return
     logger.debug(&"Setting log file to '{config.logFile}'")
     setLogFile(file=config.logFile)
     # Black Lives Matter. This is sarcasm btw. Fuck the left
@@ -175,8 +221,7 @@ when isMainModule:
                         quit(EINVAL) # EINVAL - Invalid argument
             else:
                 echo "Usage: nimd [options]"
-                quit(EINVAL) # EINVAL - Invalid argument
-
+                quit(EINVAL) # EINVAL - Invalid argument        
     setStdIoUnbuffered()   # Colors don't work otherwise!
     try:
         main(logger, parseConfig(logger, "/etc/nimd/nimd.conf"))

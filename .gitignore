@@ -5,7 +5,6 @@ main
 *.iso
 nimd
 main
-boot.sh
 rootfs
 packervm
 test
@@ -14,7 +13,5 @@ initrd*
 vmlinuz-linux
 vmlinuz*
 debian*
-start.sh
-rebuild.sh
 vm.qcow2
 *.tar.*

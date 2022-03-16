@@ -28,8 +28,8 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
     if startServices:
         logger.info("Processing default runlevel")
         startServices(logger, workers=config.workers, level=Default)
-        logger.debug(&"Unblocking signals")
-        unblockSignals(logger)
+    logger.debug(&"Unblocking signals")
+    unblockSignals(logger)
     logger.info("System initialization complete, idling on control socket")
     var opType: string
     try:
@@ -40,40 +40,49 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
         logger.switchToFile()
         logger.debug("Entering accept() loop")
         while true:
-            serverSocket.accept(clientSocket)
-            logger.debug(&"Received connection on control socket")
-            if clientSocket.recv(opType, size=1) == 0:
-                logger.debug(&"Client has disconnected, waiting for new connections")
-                continue
-            logger.debug(&"Received operation type '{opType}' via control socket")
-            # The operation type is a single byte:
-            # - 'p' -> poweroff
-            # - 'r' -> reboot
-            # - 'h' -> halt
-            # - 's' -> Services-related operations (start, stop, get status, etc.)
-            # - 'l' -> Reload in-memory configuration
-            case opType:
-                of "p":
-                    logger.info("Received shutdown request")
-                    shutdown(logger)
-                of "r":
-                    logger.info("Received reboot request")
-                    reboot(logger)
-                of "h":
-                    logger.info("Received halt request")
-                    halt(logger)
-                of "s":
-                    logger.info("Received service request")
-                    # TODO: Operate on services
-                of "l":
-                    logger.info("Received reload request")
-                    mainLoop(logger, parseConfig(logger, "/etc/nimd/nimd.conf"), startServices=false)
-                else:
-                    logger.warning(&"Received unknown operation type '{opType}' via control socket, ignoring it")
-                    discard
-            clientSocket.close()
+            try:
+                serverSocket.accept(clientSocket)
+                logger.debug(&"Received connection on control socket")
+                if clientSocket.recv(opType, size=1) == 0:
+                    logger.debug(&"Client has disconnected, waiting for new connections")
+                    continue
+                logger.debug(&"Received operation type '{opType}' via control socket")
+                # The operation type is a single byte:
+                # - 'p' -> poweroff
+                # - 'r' -> reboot
+                # - 'h' -> halt
+                # - 's' -> Services-related operations (start, stop, get status, etc.)
+                # - 'l' -> Reload in-memory configuration
+                # - 'c' -> Check NimD status (returns "1" if up)
+                case opType:
+                    of "p":
+                        logger.info("Received shutdown request")
+                        shutdown(logger)
+                    of "r":
+                        logger.info("Received reboot request")
+                        reboot(logger)
+                    of "h":
+                        logger.info("Received halt request")
+                        halt(logger)
+                    of "s":
+                        logger.info("Received service-related request")
+                        # TODO: Operate on services
+                    of "l":
+                        logger.info("Received reload request")
+                        mainLoop(logger, parseConfig(logger, "/etc/nimd/nimd.conf"), startServices=false)
+                    of "c":
+                        logger.info("Received check request, responding")
+                        clientSocket.send("1")
+                    else:
+                        logger.warning(&"Received unknown operation type '{opType}' via control socket, ignoring it")
+                        discard
+            except:
+                logger.error(&"An error occurred while idling on control socket: {getCurrentExceptionMsg()}")
+            finally:
+                clientSocket.close()
+                clientSocket = newSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     except:
-        logger.critical(&"A critical error has occurred while running, restarting the mainloop in {config.restartDelay} seconds! Error -> {getCurrentExceptionMsg()}")
+        logger.critical(&"A critical error has occurred while running, restarting the main loop in {config.restartDelay} seconds! Error -> {getCurrentExceptionMsg()}")
         sleepSeconds(config.restartDelay)
         # We *absolutely* cannot die
         mainLoop(logger, config, startServices=false)
