@@ -121,7 +121,7 @@ proc main(logger: Logger, config: NimDConfig) =
     logger.debug(&"Setting log file to '{config.logFile}'")
     setLogFile(file=config.logFile)
     # Black Lives Matter. This is sarcasm btw. Fuck the left
-    logger.debug("WOOO BLACK LIVES MATTER YOUR MOM BLACK I BANG HER WITH MY BBC BLACK LIVES MATTER LETS FUCKING GOOOOO")
+    logger.critical("WOOO BLACK LIVES MATTER YOUR MOM BLACK I BANG HER WITH MY BBC BLACK LIVES MATTER LETS FUCKING GOOOOO")
     logger.info("Starting NimD: A minimal, self-contained, dependency-based Linux init system written in Nim")
     logger.info(&"NimD version {NimdVersion.major}.{NimdVersion.minor}.{NimdVersion.patch} is starting up!")
     logger.trace("Calling getCurrentProcessId()")
