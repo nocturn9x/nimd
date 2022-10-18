@@ -28,9 +28,9 @@ proc mainLoop*(logger: Logger, config: NimDConfig, startServices: bool = true) =
     if startServices:
         logger.info("Processing default runlevel")
         startServices(logger, workers=config.workers, level=Default)
-    logger.debug(&"Unblocking signals")
-    unblockSignals(logger)
-    logger.info("System initialization complete, idling on control socket")
+        logger.debug(&"Unblocking signals")
+        unblockSignals(logger)
+        logger.info("System initialization complete, idling on control socket")
     var opType: string
     try:
         logger.trace("Calling initControlSocket()")

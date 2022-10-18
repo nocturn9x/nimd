@@ -18,7 +18,7 @@ import net
 import os
 
 # NimD's own stuff
-import util/[logging, constants, misc, config]
+import util/[logging, constants, misc, config, cffi]
 import core/[mainloop, fs, shutdown, services]
 
 

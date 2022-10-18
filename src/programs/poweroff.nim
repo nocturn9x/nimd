@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import net
+import strformat
 
 
 when isMainModule:
@@ -19,7 +21,10 @@ when isMainModule:
     try:
         sock.connectUnix("/var/run/nimd.sock")
     except OSError:
-        echo getCurrentExceptionMsg()
-        quit(-1)
-    echo sock.trySend("p")
+        echo &"Communication with NimD control socket failed: {osErrorMsg(osLastError())}"
+        quit(int(osLastError()))
+    if sock.trySend("p"):
+        echo "Shutting down"
+    else:
+        echo &"Communication with NimD control socket failed: {osErrorMsg(osLastError())}"
     sock.close()

@@ -26,7 +26,6 @@ import ../core/shutdown
 
 
 proc sleepSeconds*(amount: SomeNumber) = sleep(int(amount * 1000))
-proc strsignal*(sig: cint): cstring {.header: "string.h", importc.}
 proc dummySigHandler(x: cint) {.noconv.} = discard
 
 
@@ -80,15 +79,6 @@ proc reapProcess*(logger: Logger) =
     logger.trace(&"Call to waitpid() set status to {status} and returned {returnCode}")
 
 
-proc exists*(p: string): bool =
-    ## Returns true if a path exists,
-    ## false otherwise
-    try:
-        discard getFileInfo(p)
-        result = true
-    except OSError:
-        result = false
-
 
 proc setHostname*(logger: Logger): string =
     ## Sets the machine's hostname. Returns 
@@ -108,3 +98,13 @@ proc setHostname*(logger: Logger): string =
         logger.error(&"An error occurred while setting hostname -> {getCurrentExceptionMsg()}")
         return ""
     return hostname
+
+
+proc exists*(p: string): bool =
+    ## Returns true if a path exists,
+    ## false otherwise
+    try:
+        discard getFileInfo(p)
+        result = true
+    except OSError:
+        result = false

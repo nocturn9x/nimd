@@ -23,8 +23,8 @@ when isMainModule:
     except OSError:
         echo &"Communication with NimD control socket failed: {osErrorMsg(osLastError())}"
         quit(int(osLastError()))
-    if sock.trySend("r"):
-        echo "Rebooting"
+    if sock.trySend("l"):
+        echo "Reloading"
     else:
         echo &"Communication with NimD control socket failed: {osErrorMsg(osLastError())}"
     sock.close()

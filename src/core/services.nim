@@ -22,10 +22,9 @@ import shlex
 import os
 
 
-proc strsignal(sig: cint): cstring {.header: "string.h", importc.}
-
 
 import ../util/logging
+import ../util/cffi
 
 
 type

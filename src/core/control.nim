@@ -13,24 +13,31 @@
 # limitations under the License.
 import os
 import net
+import posix
 import strformat
 import shutdown
 
 
 import ../util/logging
-import ../util/misc
 
 
 proc initControlSocket*(logger: Logger, path: string = "/var/run/nimd.sock"): Socket =
     ## Initializes NimD's control socket (an unbuffered
     ## TCP Unix Domain Socket) binding it to the given
-    ## path (defaults to /var/run/nimd.sock)
+    ## path (defaults to /var/run/nimd.sock). The socket's
+    ## permissions are set to 700 so that only root can read
+    ## from it
     try:
         logger.info(&"Initializing control socket at '{path}'")
-        if exists(path):
+        if fileExists(path):
             removeFile(path)
-        result = newSocket(AF_UNIX, SOCK_STREAM, IPPROTO_IP, buffered=false)
+        elif dirExists(path):
+            removeDir(path)
+        result = newSocket(net.AF_UNIX, net.SOCK_STREAM, net.IPPROTO_IP, buffered=false)
         bindUnix(result, path)
+        if posix.chmod(cstring(splitPath(path).head), 700) == -1:
+            logger.error(&"Could not restrict access to unix socket at '{path}: {posix.strerror(posix.errno)}'")
+            nimDExit(logger, code=int(posix.errno))
     except OSError:
         logger.error(&"Error when binding unix socket at '{path}': {getCurrentExceptionMsg()}")
         nimDExit(logger, code=int(osLastError()))

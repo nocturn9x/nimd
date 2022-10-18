@@ -17,24 +17,9 @@ import strformat
 import posix
 import os
 
-import ../util/[logging, misc]
+import ../util/[logging, misc, cffi]
 import shutdown
 
-
-# Nim wrappers around C functionality in sys/mount.h on Linux
-proc mount*(source: cstring, target: cstring, fstype: cstring,
-            mountflags: culong, data: pointer): cint {.header: "sys/mount.h", importc.}
-# Since cstrings are weak references, we need to convert nim strings to cstrings only
-# when we're ready to use them and only when we're sure the underlying nim string is
-# in scope, otherwise garbage collection madness happens
-proc mount*(source, target, fstype: string, mountflags: uint64, data: string): int = int(mount(cstring(source), cstring(target), cstring(fstype), culong(mountflags), cstring(data)))
-
-proc umount*(target: cstring): cint {.header: "sys/mount.h", importc.}
-proc umount2*(target: cstring, flags: cint): cint {.header: "sys/mount.h", importc.}
-# These 2 wrappers silent the CStringConv warning 
-# (implicit conversion to 'cstring' from a non-const location)
-proc umount*(target: string): int = int(umount(cstring(target)))
-proc umount2*(target: string, flags: int): int = int(umount2(cstring(target), cint(flags)))
 
 
 ## Our Nim API

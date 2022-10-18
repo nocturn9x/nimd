@@ -19,6 +19,8 @@ import posix
 import times
 
 
+import cffi
+
 type
     LogLevel* = enum
         Trace = 0,
@@ -37,9 +39,6 @@ type
     Logger* = ref object
         level*: LogLevel
         handlers*: seq[LogHandler]
-
-
-proc dup3(a1, a2, a3: cint): cint {.importc.}
 
 
 var defaultLevel = LogLevel.Info
@@ -215,7 +214,7 @@ proc switchToConsole*(self: Logger) =
     self.addHandler(createHandler(logFatalStderr, LogLevel.Fatal))
 
 
-proc getDefaultLogger*(): Logger =
+proc getDefaultLogger*: Logger =
     ## Gets a simple logger with level set
     ## to LogLevel.Info and one handler per
     ## level that writes the given message to the
