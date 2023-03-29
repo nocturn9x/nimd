@@ -105,23 +105,21 @@ proc resolve(logger: Logger, node: Service): seq[Service] =
     ## list of services, treating it as a DAG
     ## (Directed Acyclic Graph) and builds a topologically
     ## sorted list such that a service appears in it only
-    ## after all of its dependencies and only
-    ## before all of its dependents.
-    ## This function is called iteratively by resolveDependencies
-    ## to handle detached subgraphs, which can occurr if one or
-    ## more dependencies have common dependencies/dependents between 
-    ## each other, but not with the rest of the graph. Nodes
-    ## that have no dependencies nor provide any
-    ## service may be located anywhere in the list,
-    ## as that does not invalidate the invariants
-    ## described above. The algorithm comes from
-    ## https://www.electricmonk.nl/log/2008/08/07/dependency-resolving-algorithm/
-    ## and has been extended to support the dependent-provider paradigm.
-    ## Note that it is not an error for a service in a given runlevel to depend
-    ## on services in other runlevels: when that occurs a warning is raised and
-    ## the service in the lower runlevel is promoted to the higher one (runlevels start from 0),
-    ## which means adding a module in a given runlevel implicitly adds all of its dependencies
-    ## to said runlevel as well, regardless of what was specified in their unit file
+    ## after all of its dependencies and only before all of 
+    ## its dependents. This function is called iteratively by 
+    ## resolveDependencies handle the case where the dependency
+    ## graph is not fully connected. Nodes that have no dependencies
+    ## and are not providers may be located anywhere in the list, as 
+    ## that does not invalidate the invariants described above. The
+    ## algorithm comes from https://www.electricmonk.nl/log/2008/08/07/dependency-resolving-algorithm/
+    ## and has been extended to support the dependent-provider 
+    ## paradigm. Note that it is not an error for a service in 
+    ## a given runlevel to depend on services in other runlevels: 
+    ## when that occurs a warning is raised and the service in the 
+    ## lower runlevel is promoted to the higher one (runlevels start 
+    ## from 0), which means adding a module into a given runlevel 
+    ## implicitly adds all of its dependencies to said runlevel as well,
+    ## regardless of what was specified in their unit file
     if node.isResolved:
         logger.debug(&"Dependency '{node.name}' has already been satisfied, skipping it")
         return @[]
@@ -132,7 +130,7 @@ proc resolve(logger: Logger, node: Service): seq[Service] =
         if service.provider == node:
             continue   # Services implicitly provide themselves
         if node.runlevel < service.provider.runlevel:
-            logger.warning(&"Service '{node.name}' in runlevel {node.runlevel} depends on '{service.provider.name}' in runlevel {service.provider.runlevel}, loading dependency regardless")
+            logger.warning(&"Service '{node.name}' in runlevel {node.runlevel} depends on '{service.provider.name}' in runlevel {service.provider.runlevel}, loading both")
         if not service.provider.isResolved:
             if service.provider.isMarked:
                 logger.warning(&"Cyclic dependency from '{node.name}' to '{service.provider.name}' detected while building dependency graph: skipping both")
@@ -200,7 +198,6 @@ proc removeManagedProcess*(pid: int) =
 proc addManagedProcess*(pid: int, service: Service) =
     ## Adds a managed process to the
     ## table
-    discard posix.setsid()   # For cgroups support
     processIDs[pid] = service
 
 
@@ -319,6 +316,7 @@ proc startService(logger: Logger, service: Service) =
         var arguments = split.words
         let progName = arguments[0]
         arguments = arguments[1..^1]
+        discard posix.setsid()   # For cgroups support
         process = startProcess(progName, workingDir=service.workDir, args=arguments, options=if service.useParentStreams: {poParentStreams, poStdErrToStdOut} else: {poUsePath, poDaemon, poStdErrToStdOut})
         if service.supervised or service.kind != Oneshot:
             var pid = posix.fork()
